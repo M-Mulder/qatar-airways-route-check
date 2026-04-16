@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# Local-only docs (may contain deployment hints; do not commit)
+VERCEL_SETUP.local.md
+
 # vercel
 .vercel
 

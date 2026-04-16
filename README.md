@@ -17,9 +17,19 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (fro
 cp env.example .env
 # Fill DATABASE_URL, CRON_SECRET, PLANNED_DATA_URL
 npm install
-npx prisma migrate deploy   # or: npx prisma db push
 npm run dev
 ```
+
+### Database (read this)
+
+Use a **dedicated empty Postgres database** for this app. Do **not** run `prisma db push` against a shared Retool/demo database: Prisma can **drop tables** that are not in `schema.prisma`.
+
+On a **new** database, create tables with one of:
+
+- [`scripts/create-daily-compare-only.sql`](scripts/create-daily-compare-only.sql) (safe `CREATE TABLE IF NOT EXISTS` + indexes), then `npx prisma generate`, or  
+- `npx prisma migrate deploy` only after [baselining](https://www.prisma.io/docs/guides/migrate/production-troubleshooting#baseline-a-database-with-migrations) on an empty schema.
+
+Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the repo root (that name is **gitignored** so it is not committed).
 
 ### Environment variables
 
