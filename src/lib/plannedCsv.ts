@@ -97,6 +97,39 @@ export function plannedEquipmentSummary(r: PlannedRow): string {
   return equipmentLabel(r);
 }
 
+/** Marketing-style full name for UI when CSV has no `vehicle_name`. */
+const EQUIPMENT_CATEGORY_FULL_NAMES: Record<string, string> = {
+  "A350-900": "Airbus A350-900",
+  "A350-1000": "Airbus A350-1000",
+  B77W: "Boeing 777-300ER",
+};
+
+/** Map stored compare summary (e.g. A350-900) to a readable aircraft name. */
+export function plannedEquipmentDisplayFullName(category: string | null | undefined): string {
+  const s = (category ?? "").trim();
+  if (!s) return "—";
+  return EQUIPMENT_CATEGORY_FULL_NAMES[s] ?? s;
+}
+
+/** Full aircraft name: prefer CSV `vehicle_name`, else derive from equipment category. */
+export function aircraftDisplayFullName(r: PlannedRow): string {
+  const vn = (r.vehicle_name || "").trim();
+  if (vn) return vn;
+  return plannedEquipmentDisplayFullName(plannedEquipmentSummary(r));
+}
+
+/**
+ * Short type code for display (e.g. `a359`): prefer `vehicle_short`, else derive from `vehicle_code`.
+ */
+export function aircraftDisplayTypeCode(r: PlannedRow): string {
+  const short = (r.vehicle_short || "").trim();
+  if (short) return short.toLowerCase();
+  const vc = (r.vehicle_code || "").trim();
+  if (!vc) return "—";
+  if (/^\d{3}$/.test(vc)) return `a${vc}`;
+  return vc.toLowerCase();
+}
+
 /** Operational day (departure_local YYYY-MM-DD) for rows matching configured segments; max = latest day in export. */
 export function pickLatestCompareDateFromPlannedRows(
   rows: PlannedRow[],

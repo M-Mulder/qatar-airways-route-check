@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlannedRow } from "@/lib/plannedCsv";
-import { departureDateKey } from "@/lib/plannedCsv";
+import { aircraftDisplayFullName, aircraftDisplayTypeCode, departureDateKey } from "@/lib/plannedCsv";
 import { QsuiteQMark } from "./QsuiteQMark";
 
 function localCalendarDateIso(): string {
@@ -39,16 +39,6 @@ function routeLabel(r: PlannedRow): string {
   return `${r.origin}–${r.destination}`;
 }
 
-function typeLabel(r: PlannedRow): string {
-  return (r.vehicle_short || r.vehicle_name || "").trim() || "—";
-}
-
-/** Lowercase aircraft label for display, e.g. `a359`; matches sort key casing via typeLabel. */
-function aircraftDisplayText(r: PlannedRow): string {
-  const t = typeLabel(r);
-  return t === "—" ? t : t.toLowerCase();
-}
-
 function qsuiteRank(v: boolean | null): number {
   if (v === false) return 0;
   if (v === null) return 1;
@@ -82,10 +72,10 @@ function comparePlanned(a: PlannedRow, b: PlannedRow, key: PlannedExportSortKey,
       cmp = a.departure_local.localeCompare(b.departure_local);
       break;
     case "type":
-      cmp = typeLabel(a).localeCompare(typeLabel(b));
+      cmp = aircraftDisplayFullName(a).localeCompare(aircraftDisplayFullName(b));
       break;
     case "vehicle_code":
-      cmp = (a.vehicle_code || "").localeCompare(b.vehicle_code || "");
+      cmp = aircraftDisplayTypeCode(a).localeCompare(aircraftDisplayTypeCode(b));
       break;
     case "qsuite":
       cmp = qsuiteRank(a.qsuite_equipped) - qsuiteRank(b.qsuite_equipped);
@@ -169,7 +159,7 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
 
   return (
     <div className="ops-panel ops-scroll max-h-[min(70vh,720px)] overflow-auto p-1">
-      <table className="ops-table min-w-[640px] text-xs">
+      <table className="ops-table min-w-[720px] text-xs">
         <thead className="bg-[var(--ops-elevated)]">
           <tr>
             <SortTh label="Snapshot date" sortKey="query_date" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
@@ -213,11 +203,11 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
               <td className="ops-table-mono text-[var(--ops-fg)]">{r.departure_local}</td>
               <td className="text-[var(--ops-muted)]">
                 <span className="inline-flex flex-wrap items-center gap-1.5">
-                  <span>{aircraftDisplayText(r)}</span>
+                  <span>{aircraftDisplayFullName(r)}</span>
                   {r.qsuite_equipped === true ? <QsuiteQMark title="Scheduled Qsuite" /> : null}
                 </span>
               </td>
-              <td className="ops-table-mono">{r.vehicle_code || "—"}</td>
+              <td className="ops-table-mono text-[var(--ops-fg)]">{aircraftDisplayTypeCode(r)}</td>
               <td className="text-[var(--ops-muted)]">
                 {r.qsuite_equipped === null ? "—" : r.qsuite_equipped ? "Yes" : "No"}
               </td>

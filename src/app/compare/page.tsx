@@ -3,7 +3,7 @@ import type { DailyCompare } from "@/generated/prisma";
 import { fr24FlightPath } from "@/lib/config";
 import { overallCompareMatch } from "@/lib/compareExplain";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
-import type { PlannedRow } from "@/lib/plannedCsv";
+import { type PlannedRow, plannedEquipmentDisplayFullName } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
 // import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
@@ -32,8 +32,7 @@ function ScheduledAircraftCell({
   equipment: string | null;
   qsuiteScheduled: boolean | null;
 }) {
-  const raw = (equipment ?? "").trim();
-  const text = raw ? raw.toLowerCase() : "—";
+  const text = plannedEquipmentDisplayFullName(equipment);
   return (
     <span className="inline-flex flex-wrap items-center gap-1.5">
       <span>{text}</span>
