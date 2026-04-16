@@ -6,7 +6,7 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (sto
 
 ## Features
 
-- Daily **Vercel Cron** → `GET /api/cron/compare` (secured with `CRON_SECRET`).
+- **Twice-daily Vercel Cron** → `GET /api/cron/compare` (secured with `CRON_SECRET`): **06:00** and **19:34** UTC.
 - **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
 - **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
@@ -92,7 +92,7 @@ The **build** runs `next build` only (`postinstall` already runs `prisma generat
 
 ## Cron (Vercel)
 
-[`vercel.json`](vercel.json) schedules `0 6 * * *` UTC. Ensure the **Cron** integration is enabled on your Vercel project and `CRON_SECRET` is set in project settings.
+[`vercel.json`](vercel.json) schedules **`0 6 * * *`** and **`34 19 * * *`** (06:00 and 19:34 **UTC** every day). Schedules are always UTC on Vercel. Ensure **Cron Jobs** are enabled on the project and `CRON_SECRET` is set in Production.
 
 Manual run:
 
