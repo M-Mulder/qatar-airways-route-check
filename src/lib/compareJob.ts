@@ -1,13 +1,9 @@
 import { getPrisma } from "@/lib/prisma";
 import type { SegmentDef } from "@/lib/config";
 import { fetchFr24FlightHistoryHtml, findFr24RowForDay, parseFr24FlightHistoryHtml } from "@/lib/fr24FlightHistory";
-import {
-  departureDateKey,
-  fetchPlannedCsv,
-  parsePlannedCsv,
-  pickPlannedForSegment,
-  plannedEquipmentSummary,
-} from "@/lib/plannedCsv";
+import type { PlannedRow } from "@/lib/plannedCsv";
+import { fr24EquipmentSummary, matchPlannedVsFr24Equipment } from "@/lib/equipmentCompare";
+import { departureDateKey, pickPlannedForSegment, plannedEquipmentSummary } from "@/lib/plannedCsv";
 import { hasQsuiteTail } from "@/lib/qsuiteRegistry";
 
 function compareDateToPrisma(compareDateIso: string): Date {
@@ -29,21 +25,27 @@ export type CompareJobResult = {
   errors: string[];
 };
 
+export type MultiCompareJobResult = {
+  compareDates: string[];
+  segmentsProcessed: number;
+  errors: string[];
+};
+
 /**
- * Load planned CSV, scrape FR24 per distinct flight, upsert DailyCompare rows for each segment.
+ * Load planned rows once, scrape FR24 once per distinct flight.
+ * Upserts DailyCompare only when Qsuite and equipment family compares are both decisive (Match/Mismatch each).
+ * Deletes any existing row when either dimension is inconclusive (N/A).
  */
-export async function runCompareForDate(
-  compareDateIso: string,
+export async function runCompareForDates(
+  compareDateIsos: string[],
   segments: SegmentDef[],
-  plannedUrl: string,
-): Promise<CompareJobResult> {
+  plannedRows: PlannedRow[],
+): Promise<MultiCompareJobResult> {
   const prisma = getPrisma();
   if (!prisma) {
     throw new Error("DATABASE_URL is not set");
   }
   const errors: string[] = [];
-  const plannedText = await fetchPlannedCsv(plannedUrl);
-  const plannedRows = parsePlannedCsv(plannedText);
 
   const fr24Cache = new Map<string, ReturnType<typeof parseFr24FlightHistoryHtml>>();
   const flightsNeeded = [...new Set(segments.map((s) => s.flight))];
@@ -59,82 +61,113 @@ export async function runCompareForDate(
     }
   }
 
+  const uniqueDates = [...new Set(compareDateIsos)].sort();
   let segmentsProcessed = 0;
-  const compareDate = compareDateToPrisma(compareDateIso);
 
-  for (const seg of segments) {
-    const planned = pickPlannedForSegment(
-      plannedRows,
-      compareDateIso,
-      seg.flight,
-      seg.fromIata,
-      seg.toIata,
-    );
+  for (const compareDateIso of uniqueDates) {
+    const compareDate = compareDateToPrisma(compareDateIso);
 
-    const fr24Rows = fr24Cache.get(seg.flight) ?? [];
-    const fr = findFr24RowForDay(fr24Rows, compareDateIso, seg.fromIata, seg.toIata);
+    for (const seg of segments) {
+      const planned = pickPlannedForSegment(
+        plannedRows,
+        compareDateIso,
+        seg.flight,
+        seg.fromIata,
+        seg.toIata,
+      );
 
-    const plannedEquipment = planned ? plannedEquipmentSummary(planned) : null;
-    const plannedQsuiteApi = planned?.qsuite_equipped ?? null;
-    const plannedQueryDate = planned?.query_date ?? null;
-    const plannedDepartureLocal = planned?.departure_local ?? null;
+      const fr24Rows = fr24Cache.get(seg.flight) ?? [];
+      const fr = findFr24RowForDay(fr24Rows, compareDateIso, seg.fromIata, seg.toIata);
 
-    const actualRegistration = fr?.registration ?? null;
-    const actualAircraftCell = fr?.aircraftCellText ?? null;
-    const actualQsuiteFromTail = actualRegistration ? hasQsuiteTail(actualRegistration) : null;
+      const plannedEquipment = planned ? plannedEquipmentSummary(planned) : null;
+      const plannedQsuiteApi = planned?.qsuite_equipped ?? null;
+      const plannedQueryDate = planned?.query_date ?? null;
+      const plannedDepartureLocal = planned?.departure_local ?? null;
 
-    let fr24Error: string | null = null;
-    if (!fr) {
-      const fetchFail = errors.find((e) => e.startsWith(`${seg.flight} FR24`));
-      if (fetchFail) fr24Error = fetchFail;
-      else if (fr24Rows.length === 0) fr24Error = "No FR24 rows parsed";
-      else fr24Error = "No matching FR24 row for this date/route";
-    }
+      const actualRegistration = fr?.registration ?? null;
+      const actualAircraftCell = fr?.aircraftCellText ?? null;
+      const actualQsuiteFromTail = actualRegistration ? hasQsuiteTail(actualRegistration) : null;
+      const actualEquipment = fr24EquipmentSummary(actualAircraftCell);
+      const eqMatch = matchPlannedVsFr24Equipment(plannedEquipment, actualAircraftCell);
 
-    const mq = matchQsuite(plannedQsuiteApi, actualQsuiteFromTail);
+      let fr24Error: string | null = null;
+      if (!fr) {
+        const fetchFail = errors.find((e) => e.startsWith(`${seg.flight} FR24`));
+        if (fetchFail) fr24Error = fetchFail;
+        else if (fr24Rows.length === 0) fr24Error = "Could not read any flights from the live tracking page.";
+        else fr24Error = "No flight listed for this date and route on the live tracking page.";
+      }
 
-    await prisma.dailyCompare.upsert({
-      where: {
-        compareDate_flight_routeKey: {
+      const mq = matchQsuite(plannedQsuiteApi, actualQsuiteFromTail);
+
+      if (mq === null || eqMatch === null) {
+        await prisma.dailyCompare.deleteMany({
+          where: {
+            compareDate,
+            flight: seg.flight,
+            routeKey: seg.routeKey,
+          },
+        });
+        continue;
+      }
+
+      await prisma.dailyCompare.upsert({
+        where: {
+          compareDate_flight_routeKey: {
+            compareDate,
+            flight: seg.flight,
+            routeKey: seg.routeKey,
+          },
+        },
+        create: {
           compareDate,
           flight: seg.flight,
           routeKey: seg.routeKey,
+          plannedEquipment,
+          plannedQsuiteApi,
+          plannedQueryDate,
+          plannedDepartureLocal,
+          actualRegistration,
+          actualAircraftCell,
+          actualEquipment,
+          actualQsuiteFromTail,
+          matchQsuite: mq,
+          matchEquipment: eqMatch,
+          fr24Error,
+          source: "fr24",
         },
-      },
-      create: {
-        compareDate,
-        flight: seg.flight,
-        routeKey: seg.routeKey,
-        plannedEquipment,
-        plannedQsuiteApi,
-        plannedQueryDate,
-        plannedDepartureLocal,
-        actualRegistration,
-        actualAircraftCell,
-        actualQsuiteFromTail,
-        matchQsuite: mq,
-        fr24Error,
-        source: "fr24",
-      },
-      update: {
-        plannedEquipment,
-        plannedQsuiteApi,
-        plannedQueryDate,
-        plannedDepartureLocal,
-        actualRegistration,
-        actualAircraftCell,
-        actualQsuiteFromTail,
-        matchQsuite: mq,
-        fr24Error,
-      },
-    });
-    segmentsProcessed += 1;
+        update: {
+          plannedEquipment,
+          plannedQsuiteApi,
+          plannedQueryDate,
+          plannedDepartureLocal,
+          actualRegistration,
+          actualAircraftCell,
+          actualEquipment,
+          actualQsuiteFromTail,
+          matchQsuite: mq,
+          matchEquipment: eqMatch,
+          fr24Error,
+        },
+      });
+      segmentsProcessed += 1;
+    }
   }
 
-  return { compareDate: compareDateIso, segmentsProcessed, errors };
+  return { compareDates: uniqueDates, segmentsProcessed, errors };
+}
+
+/** Single calendar day (back-compat). */
+export async function runCompareForDate(
+  compareDateIso: string,
+  segments: SegmentDef[],
+  plannedRows: PlannedRow[],
+): Promise<CompareJobResult> {
+  const r = await runCompareForDates([compareDateIso], segments, plannedRows);
+  return { compareDate: compareDateIso, segmentsProcessed: r.segmentsProcessed, errors: r.errors };
 }
 
 /** Dev helper: validate planned rows have departure keys. */
-export function debugCountPlannedForDate(plannedRows: ReturnType<typeof parsePlannedCsv>, iso: string): number {
+export function debugCountPlannedForDate(plannedRows: PlannedRow[], iso: string): number {
   return plannedRows.filter((r) => departureDateKey(r.departure_local) === iso).length;
 }

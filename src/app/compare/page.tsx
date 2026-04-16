@@ -1,35 +1,60 @@
-import Link from "next/link";
-import type { DailyCompare } from "@prisma/client";
-import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
+import type { DailyCompare } from "@/generated/prisma";
 import { fr24FlightPath } from "@/lib/config";
+import { overallCompareMatch } from "@/lib/compareExplain";
+import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
+import type { PlannedRow } from "@/lib/plannedCsv";
+import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
+import { CompareBriefingPopover } from "./CompareBriefingPopover";
+import { PlannedExportTable } from "./PlannedExportTable";
 
 export const dynamic = "force-dynamic";
 
 function badge(match: boolean | null) {
-  if (match === true) return "bg-emerald-100 text-emerald-900";
-  if (match === false) return "bg-amber-100 text-amber-950";
-  return "bg-zinc-100 text-zinc-700";
+  if (match === true) return "ops-badge ops-badge-ok";
+  if (match === false) return "ops-badge ops-badge-warn";
+  return "ops-badge ops-badge-muted";
 }
 
 function label(match: boolean | null) {
-  if (match === true) return "Match";
-  if (match === false) return "Mismatch";
-  return "N/A";
+  if (match === true) return "Aligned";
+  if (match === false) return "Not aligned";
+  return "Unclear";
 }
 
 export default async function ComparePage() {
   let rows: DailyCompare[] = [];
   let dbError: string | null = null;
 
+  let plannedRows: PlannedRow[] = [];
+  let plannedError: string | null = null;
+
+  const prisma = hasDatabaseUrl() ? getPrisma() : null;
+
   if (!hasDatabaseUrl()) {
-    dbError =
-      "DATABASE_URL is not set. For local dev, copy env.example to .env.local and add your Postgres connection string.";
+    plannedError =
+      "Connect a database (set DATABASE_URL) to load your schedule from the app.";
+    dbError = "Database unavailable.";
+  } else if (!prisma) {
+    const msg =
+      "DATABASE_URL is set but Prisma could not be initialized. Check the connection string and run `npx prisma generate`.";
+    plannedError = msg;
+    dbError = msg;
   } else {
-    const prisma = getPrisma()!;
+    try {
+      plannedRows = await loadPlannedRowsFromDatabase();
+      if (plannedRows.length === 0) {
+        plannedError =
+          "No schedule in the database yet. Import your CSV with: npm run db:seed-planned <path-to-export.csv>";
+      }
+    } catch (e) {
+      plannedError = e instanceof Error ? e.message : String(e);
+    }
+
     try {
       rows = await prisma.dailyCompare.findMany({
-        orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
-        take: 150,
+        where: { OR: [{ matchQsuite: true }, { matchQsuite: false }] },
+        orderBy: [{ compareDate: "asc" }, { flight: "asc" }, { routeKey: "asc" }],
+        take: 5000,
       });
     } catch (e) {
       dbError = e instanceof Error ? e.message : String(e);
@@ -37,94 +62,139 @@ export default async function ComparePage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">Planned vs actual</h1>
-          <p className="mt-2 max-w-2xl text-sm text-zinc-600">
-            Planned from Qatar CSV snapshot (<code className="rounded bg-zinc-100 px-1">PLANNED_DATA_URL</code>).
-            Actual tail from Flightradar24 history pages; Qsuite inferred from the static tail list in{" "}
-            <code className="rounded bg-zinc-100 px-1">data/qsuite-tails.json</code>.
-          </p>
-        </div>
-        <Link href="/" className="text-sm font-medium text-violet-700 hover:underline">
-          About
-        </Link>
+    <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
+      <div className="ops-reveal">
+        <h1 className="ops-display text-3xl text-[var(--ops-fg)] md:text-4xl">
+          Schedule and live tracking
+        </h1>
       </div>
 
-      {dbError ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
-          <p className="font-medium">Database unavailable</p>
-          <p className="mt-1 text-amber-900/90">{dbError}</p>
-          <p className="mt-2 text-amber-900/80">
-            Local: <code className="rounded bg-white/60 px-1">.env.local</code> with <code className="rounded bg-white/60 px-1">DATABASE_URL</code>. Vercel: set the same in Project Settings → Environment Variables. Apply schema with{" "}
-            <code className="rounded bg-white/60 px-1">scripts/create-daily-compare-only.sql</code> or{" "}
-            <code className="rounded bg-white/60 px-1">npx prisma migrate deploy</code> on that database.
-          </p>
+      {plannedError ? (
+        <div className="ops-reveal ops-reveal-d1 ops-alert ops-alert-error">
+          <p className="font-semibold text-white">Schedule</p>
+          <p className="mt-1 opacity-95">{plannedError}</p>
         </div>
-      ) : rows.length === 0 ? (
-        <p className="text-sm text-zinc-600">
-          No rows yet. After deploy, wait for the daily cron or call{" "}
-          <code className="rounded bg-zinc-100 px-1">GET /api/cron/compare</code> with Bearer{" "}
-          <code className="rounded bg-zinc-100 px-1">CRON_SECRET</code>.
+      ) : null}
+
+      <section className="ops-reveal ops-reveal-d1 space-y-4">
+        <h2 className="ops-display text-xl text-[var(--ops-fg)]">Saved checks</h2>
+        <p className="text-sm text-[var(--ops-subtle)]">
+          Results when your schedule was compared to live flight data (Flightradar24).
         </p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white shadow-sm">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-zinc-200 bg-zinc-50 text-xs font-semibold uppercase text-zinc-600">
-              <tr>
-                <th className="px-3 py-2">Date</th>
-                <th className="px-3 py-2">Route</th>
-                <th className="px-3 py-2">Flight</th>
-                <th className="px-3 py-2">Planned equip.</th>
-                <th className="px-3 py-2">API Qsuite</th>
-                <th className="px-3 py-2">Tail</th>
-                <th className="px-3 py-2">Tail Qsuite</th>
-                <th className="px-3 py-2">Compare</th>
-                <th className="px-3 py-2">FR24</th>
-                <th className="px-3 py-2">Note</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {rows.map((r) => (
-                <tr key={r.id} className="hover:bg-zinc-50/80">
-                  <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-zinc-800">
-                    {r.compareDate.toISOString().slice(0, 10)}
-                  </td>
-                  <td className="px-3 py-2 text-zinc-800">{r.routeKey}</td>
-                  <td className="px-3 py-2 font-medium text-zinc-900">{r.flight}</td>
-                  <td className="px-3 py-2 text-zinc-700">{r.plannedEquipment ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {r.plannedQsuiteApi === null ? "—" : r.plannedQsuiteApi ? "Yes" : "No"}
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs">{r.actualRegistration ?? "—"}</td>
-                  <td className="px-3 py-2">
-                    {r.actualQsuiteFromTail === null ? "—" : r.actualQsuiteFromTail ? "Yes" : "No"}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge(r.matchQsuite)}`}>
-                      {label(r.matchQsuite)}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2">
-                    <a
-                      className="text-violet-700 hover:underline"
-                      href={fr24FlightPath(r.flight)}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Open
-                    </a>
-                  </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-xs text-amber-800" title={r.fr24Error ?? ""}>
-                    {r.fr24Error ?? ""}
-                  </td>
+        {dbError ? (
+          <div className="ops-alert ops-alert-warn">
+            <p className="font-semibold text-[var(--ops-fg)]">{dbError}</p>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="max-w-2xl space-y-3">
+            <p className="text-sm text-[var(--ops-muted)]">No saved checks yet.</p>
+            {!plannedError && plannedRows.length > 0 ? (
+              <p className="text-xs leading-relaxed text-[var(--ops-subtle)]">
+                A row appears here only when the daily job finds that flight on{" "}
+                <span className="text-[var(--ops-muted)]">Flightradar24</span> for that date and route{" "}
+                <em>and</em> we can confirm both{" "}
+                <span className="text-[var(--ops-muted)]">Qsuite</span> (airline data vs the aircraft
+                registration) and{" "}
+                <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs the live
+                tracking page). If live data is missing, blocked, or the aircraft text does not match your
+                schedule, nothing is saved here—your imported schedule below still comes from the database.
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="ops-panel overflow-x-auto p-1">
+            <table className="ops-table min-w-[800px]">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Route</th>
+                  <th>Flight</th>
+                  <th>Scheduled aircraft</th>
+                  <th>Live aircraft</th>
+                  <th>Qsuite (airline)</th>
+                  <th>Registration</th>
+                  <th>Qsuite (aircraft)</th>
+                  <th>Status</th>
+                  <th>Track</th>
+                  <th>Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const overall = overallCompareMatch({
+                    plannedEquipment: r.plannedEquipment,
+                    actualEquipment: r.actualEquipment,
+                    plannedQsuiteApi: r.plannedQsuiteApi,
+                    actualQsuiteFromTail: r.actualQsuiteFromTail,
+                    actualAircraftCell: r.actualAircraftCell,
+                    matchQsuite: r.matchQsuite,
+                    matchEquipment: r.matchEquipment,
+                    actualRegistration: r.actualRegistration,
+                  });
+                  return (
+                    <tr key={r.id}>
+                      <td className="ops-table-mono text-[var(--ops-fg)]">{r.compareDate.toISOString().slice(0, 10)}</td>
+                      <td className="text-[var(--ops-fg)]">{r.routeKey}</td>
+                      <td className="font-semibold tracking-tight text-[var(--ops-copper)]">{r.flight}</td>
+                      <td className="text-[var(--ops-muted)]">{r.plannedEquipment ?? "—"}</td>
+                      <td className="text-[var(--ops-muted)]">{r.actualEquipment ?? "—"}</td>
+                      <td className="text-[var(--ops-muted)]">
+                        {r.plannedQsuiteApi === null ? "—" : r.plannedQsuiteApi ? "Yes" : "No"}
+                      </td>
+                      <td className="ops-table-mono text-[var(--ops-cyan)]">{r.actualRegistration ?? "—"}</td>
+                      <td className="text-[var(--ops-muted)]">
+                        {r.actualQsuiteFromTail === null ? "—" : r.actualQsuiteFromTail ? "Yes" : "No"}
+                      </td>
+                      <td className="relative align-middle">
+                        <CompareBriefingPopover
+                          input={{
+                            plannedEquipment: r.plannedEquipment,
+                            actualEquipment: r.actualEquipment,
+                            plannedQsuiteApi: r.plannedQsuiteApi,
+                            actualQsuiteFromTail: r.actualQsuiteFromTail,
+                            actualAircraftCell: r.actualAircraftCell,
+                            matchQsuite: r.matchQsuite,
+                            matchEquipment: r.matchEquipment,
+                            actualRegistration: r.actualRegistration,
+                          }}
+                          badgeLabel={label(overall)}
+                          badgeClassName={badge(overall)}
+                        />
+                      </td>
+                      <td>
+                        <a
+                          className="ops-link text-xs font-semibold"
+                          href={fr24FlightPath(r.flight)}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Live page ↗
+                        </a>
+                      </td>
+                      <td
+                        className="max-w-[200px] truncate text-xs text-[var(--ops-rose)]"
+                        title={r.fr24Error ?? ""}
+                      >
+                        {r.fr24Error ?? ""}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {!plannedError && plannedRows.length > 0 ? (
+        <section id="imported-schedule" className="ops-reveal ops-reveal-d2 space-y-4 scroll-mt-24">
+          <h2 className="ops-display text-xl text-[var(--ops-fg)]">Your imported schedule</h2>
+          <p className="text-sm text-[var(--ops-subtle)]">
+            From your database export. Today&apos;s departures are highlighted and scrolled into view.
+          </p>
+          <PlannedExportTable rows={plannedRows} />
+        </section>
+      ) : null}
     </div>
   );
 }

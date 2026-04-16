@@ -1,21 +1,22 @@
 # Qatar Airways route-check
 
-Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (from your CSV export) with **actual** tails parsed from [Flightradar24](https://www.flightradar24.com/) flight history HTML, then infers **Qsuite** using the static tail list in [`data/qsuite-tails.json`](data/qsuite-tails.json).
+Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (stored in Postgres as `PlannedSegment` rows, imported from your CSV export) with **actual** tails parsed from [Flightradar24](https://www.flightradar24.com/) flight history HTML, then infers **Qsuite** using the static tail list in [`data/qsuite-tails.json`](data/qsuite-tails.json).
 
 > **Warning:** Scraping FR24 is fragile and may violate their terms of use. Use for personal research; prefer an official API for production.
 
 ## Features
 
 - Daily **Vercel Cron** → `GET /api/cron/compare` (secured with `CRON_SECRET`).
-- Default compare day: **yesterday** in `Europe/Amsterdam` (override with `?date=YYYY-MM-DD`).
+- **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
+- **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
-- Dashboard at **`/compare`** (reads Postgres).
+- **`/`** redirects to **`/compare`** (dashboard: stored compares + full planned segment table from the database).
 
 ## Setup
 
 ```bash
 cp env.example .env
-# Fill DATABASE_URL, CRON_SECRET, PLANNED_DATA_URL
+# Fill DATABASE_URL, CRON_SECRET; run migrations then seed planned segments (see Planned segments)
 npm install
 npm run dev
 ```
@@ -26,8 +27,8 @@ Use a **dedicated empty Postgres database** for this app. Do **not** run `prisma
 
 On a **new** database, create tables with one of:
 
-- [`scripts/create-daily-compare-only.sql`](scripts/create-daily-compare-only.sql) (safe `CREATE TABLE IF NOT EXISTS` + indexes), then `npx prisma generate`, or  
-- `npx prisma migrate deploy` only after [baselining](https://www.prisma.io/docs/guides/migrate/production-troubleshooting#baseline-a-database-with-migrations) on an empty schema.
+- [`scripts/create-daily-compare-only.sql`](scripts/create-daily-compare-only.sql) (safe `CREATE TABLE IF NOT EXISTS` + indexes for `DailyCompare` and `PlannedSegment`), then `npx prisma generate`, or  
+- `npm run db:migrate` (`migrate deploy` with `.env` / `.env.local` loaded). If Prisma returns **P3005** (schema not empty / no migration history), either [baseline](https://www.prisma.io/docs/guides/migrate/production-troubleshooting#baseline-a-database-with-migrations) or apply SQL manually — for `PlannedSegment` only: `npm run db:apply-planned-migration`.
 
 Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the repo root (that name is **gitignored** so it is not committed).
 
@@ -37,22 +38,36 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 |----------|---------|
 | `DATABASE_URL` | PostgreSQL (e.g. [Vercel Postgres](https://vercel.com/docs/storage/vercel-postgres)) |
 | `CRON_SECRET` | Long random string; Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` |
-| `PLANNED_DATA_URL` | HTTPS URL to raw `qatar_segments_export.csv` (same columns as your Python exporter) |
 | `COMPARE_FLIGHTS` | Optional; comma-separated subset of `QR274,QR284,QR934` |
 
-## Planned CSV
+## Planned segments (database)
 
-The parser expects headers including: `query_date`, `flight_number`, `origin`, `destination`, `departure_local`, `vehicle_code`, `vehicle_name`, `vehicle_short`, `qsuite_equipped` — as produced by [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py) in your other project.
+Planned legs live in the **`PlannedSegment`** table (not in the repo as a CSV). Generate `qatar_segments_export.csv` with [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py) (or any file with the same headers), then load it:
+
+```bash
+npm run db:migrate
+npm run db:seed-planned -- ../schiphol_equipment_scan/qatar_segments_export.csv
+```
+
+That script **replaces** all `PlannedSegment` rows with the file contents. Re-run it whenever you refresh the export.
+
+The importer expects headers including: `query_date`, `flight_id`, `flight_number`, `origin`, `destination`, `departure_local`, `arrival_local`, `vehicle_code`, `vehicle_name`, `vehicle_short`, `duration_sec`, `qsuite_equipped`, `starlink`, `operating_airline`, `offer_origin`, `offer_destination`.
 
 Matching uses **`departure_local` date (first 10 chars = YYYY-MM-DD)** as the operational day, aligned with FR24’s DATE column for that leg.
 
 ## Database
 
-Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Initial SQL: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql).
+Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Migrations: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql), [`prisma/migrations/20260416183000_planned_segment/migration.sql`](prisma/migrations/20260416183000_planned_segment/migration.sql), [`prisma/migrations/20260417120000_daily_compare_equipment/migration.sql`](prisma/migrations/20260417120000_daily_compare_equipment/migration.sql) (`actualEquipment`, `matchEquipment` on `DailyCompare`). If `migrate deploy` is blocked, apply that file with `npm run db:apply-compare-equipment-migration`, then **`npm run db:generate`** and re-run cron so compares include equipment vs FR24.
 
 ```bash
-npx prisma migrate deploy
+npm run db:migrate
 ```
+
+### Prisma `EPERM` on Windows (`query_engine-windows.dll.node`)
+
+The Prisma client is generated under **`.prisma-client`** at the repo root (see `output` in [`prisma/schema.prisma`](prisma/schema.prisma)), not under `src/` or `node_modules/.prisma/client`, so the engine rename is less likely to hit file locks from the TypeScript language service.
+
+**`npm run db:generate`** runs [`scripts/prisma-generate-safe.mjs`](scripts/prisma-generate-safe.mjs): it clears `.prisma-client` (and best-effort removes legacy `node_modules/.prisma/client`) then runs `prisma generate`. If generate still fails, stop `next dev` / vitest / other Node processes, use **TypeScript: Restart TS Server**, and run `npm run db:generate` again. Fresh clones need `npm install` (postinstall runs generate).
 
 ## Cron (Vercel)
 
@@ -62,8 +77,34 @@ Manual run:
 
 ```bash
 curl -sS -H "Authorization: Bearer $CRON_SECRET" "https://<your-deployment>/api/cron/compare"
-# Optional backfill:
+# Optional single-day backfill:
 curl -sS -H "Authorization: Bearer $CRON_SECRET" "https://<your-deployment>/api/cron/compare?date=2026-11-15"
+```
+
+### Mock row (UI sample)
+
+With `DATABASE_URL` set, insert a populated **Match** example (2026-04-17 · QR274 · AMS–DOH · A7-AMG):
+
+```bash
+npm run db:seed-mock
+```
+
+Loads `DATABASE_URL` from `.env` then **`.env.local`** (same as Next.js: local overrides).
+
+### Clear all compare rows
+
+```bash
+npm run db:clear-compares
+```
+
+### April 16 in the planned CSV (live vs placeholder)
+
+Real Qatar BFF fetch (Playwright + DevTools headers) for a single day is documented in [`../schiphol_equipment_scan/FETCH_ONE_DAY.md`](../schiphol_equipment_scan/FETCH_ONE_DAY.md).
+
+If you cannot run that (missing headers / Akamai), upsert **idempotent placeholder** BFF-shaped `PlannedSegment` rows for **2026-04-16** into Postgres:
+
+```bash
+npm run data:add-april16-sample
 ```
 
 ## Tests
@@ -92,10 +133,7 @@ Use SSH remote if you prefer: `git@github.com:M-Mulder/qatar-airways-route-check
 
 ## Publishing planned data
 
-Keep generating CSV with your local Playwright script, then either:
-
-- Commit/push the CSV to a branch and use **raw.githubusercontent.com** as `PLANNED_DATA_URL`, or  
-- Upload to **Vercel Blob** / S3 and point the env var to the public URL.
+Generate CSV locally (same columns as [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py)), then run **`npm run db:seed-planned -- <path-to.csv>`** against each environment’s `DATABASE_URL` (local, Vercel Postgres, etc.). Cron and the dashboard read only from **`PlannedSegment`**.
 
 ## Learn more
 

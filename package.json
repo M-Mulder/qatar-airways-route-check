@@ -7,11 +7,18 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/prisma-generate-safe.mjs",
     "test": "vitest run",
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate deploy",
-    "db:push": "prisma db push"
+    "db:generate": "node scripts/prisma-generate-safe.mjs",
+    "db:migrate": "node scripts/prisma-with-env.mjs migrate deploy",
+    "db:push": "prisma db push",
+    "db:seed-mock": "node scripts/seed-mock.mjs",
+    "db:apply-planned-migration": "node scripts/db-sql.mjs prisma/migrations/20260416183000_planned_segment/migration.sql",
+    "db:apply-compare-equipment-migration": "node scripts/db-sql.mjs prisma/migrations/20260417120000_daily_compare_equipment/migration.sql",
+    "db:clear-compares": "node scripts/db-sql.mjs scripts/clear-compares.sql",
+    "db:seed-planned": "node scripts/seed-planned-segments.mjs",
+    "data:add-april16-sample": "node scripts/append-april16-sample.mjs",
+    "cron:local": "node scripts/run-cron-compare-local.mjs"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",

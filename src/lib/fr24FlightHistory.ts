@@ -48,24 +48,32 @@ export function parseFr24FlightHistoryHtml(html: string): Fr24ParsedRow[] {
 
   table.find("tbody tr").each((_, tr) => {
     const $tr = $(tr);
+    const cells = $tr.find("> td.hidden-xs.hidden-sm").toArray();
+    if (cells.length < 4) return;
 
-    const dateText = $tr
-      .find("td.hidden-xs.hidden-sm")
-      .filter((_, el) => DATE_CELL.test($(el).text().trim()))
-      .first()
-      .text()
-      .trim();
-    const dateIso = dateText ? parseFr24Date(dateText) : null;
+    const dateIdx = cells.findIndex((el) =>
+      DATE_CELL.test($(el).text().trim()),
+    );
+    if (dateIdx < 0) return;
+
+    const dateIso = parseFr24Date($(cells[dateIdx]).text().trim());
     if (!dateIso) return;
 
-    const apEls = $tr.find('a[href^="/data/airports/"]').toArray();
-    const fromIata = apEls[0] ? airportFromHref($(apEls[0]).attr("href")) : null;
-    const toIata = apEls[1] ? airportFromHref($(apEls[1]).attr("href")) : null;
+    const fromCell = cells[dateIdx + 1];
+    const toCell = cells[dateIdx + 2];
+    const acCell = cells[dateIdx + 3];
+    if (!fromCell || !toCell || !acCell) return;
 
-    const $ac = $tr.find('a[href^="/data/aircraft/"]').first();
+    const fromIata = airportFromHref(
+      $(fromCell).find('a[href^="/data/airports/"]').first().attr("href"),
+    );
+    const toIata = airportFromHref(
+      $(toCell).find('a[href^="/data/airports/"]').first().attr("href"),
+    );
+
+    const $ac = $(acCell).find('a[href^="/data/aircraft/"]').first();
     const registration = regFromHref($ac.attr("href"));
-    const $acTd = $ac.closest("td");
-    const aircraftCellText = $acTd.length ? $acTd.text().trim() : $ac.text().trim();
+    const aircraftCellText = $(acCell).text().trim();
 
     out.push({
       dateIso,
@@ -106,6 +114,9 @@ export async function fetchFr24FlightHistoryHtml(flight: string): Promise<string
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         accept: "text/html,application/xhtml+xml",
         "accept-language": "en-US,en;q=0.9",
+        referer: "https://www.flightradar24.com/",
+        "sec-fetch-dest": "document",
+        "sec-fetch-mode": "navigate",
       },
       cache: "no-store",
     });

@@ -97,6 +97,42 @@ export function plannedEquipmentSummary(r: PlannedRow): string {
   return equipmentLabel(r);
 }
 
+/** Operational day (departure_local YYYY-MM-DD) for rows matching configured segments; max = latest day in export. */
+export function pickLatestCompareDateFromPlannedRows(
+  rows: PlannedRow[],
+  segments: { flight: string; fromIata: string; toIata: string }[],
+): string | null {
+  const dates: string[] = [];
+  for (const seg of segments) {
+    for (const r of rows) {
+      if (r.flight_number !== seg.flight) continue;
+      if (r.origin !== seg.fromIata || r.destination !== seg.toIata) continue;
+      const d = departureDateKey(r.departure_local);
+      if (d) dates.push(d);
+    }
+  }
+  if (dates.length === 0) return null;
+  return dates.sort().at(-1) ?? null;
+}
+
+/** Earliest operational day among CSV rows matching configured segments (ISO date). */
+export function pickMinCompareDateFromPlannedRows(
+  rows: PlannedRow[],
+  segments: { flight: string; fromIata: string; toIata: string }[],
+): string | null {
+  const dates: string[] = [];
+  for (const seg of segments) {
+    for (const r of rows) {
+      if (r.flight_number !== seg.flight) continue;
+      if (r.origin !== seg.fromIata || r.destination !== seg.toIata) continue;
+      const d = departureDateKey(r.departure_local);
+      if (d) dates.push(d);
+    }
+  }
+  if (dates.length === 0) return null;
+  return dates.sort()[0] ?? null;
+}
+
 /** Minimal CSV line splitter (handles quoted fields without embedded newlines). */
 function splitCsvLine(line: string): string[] {
   const out: string[] = [];
@@ -117,13 +153,4 @@ function splitCsvLine(line: string): string[] {
   }
   out.push(cur);
   return out;
-}
-
-export async function fetchPlannedCsv(url: string): Promise<string> {
-  const res = await fetch(url, {
-    next: { revalidate: 300 },
-    headers: { "user-agent": "qatar-airways-route-check/1.0 (+github)" },
-  });
-  if (!res.ok) throw new Error(`PLANNED_DATA_URL HTTP ${res.status}`);
-  return res.text();
 }

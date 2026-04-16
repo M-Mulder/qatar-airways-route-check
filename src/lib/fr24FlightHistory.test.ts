@@ -13,5 +13,15 @@ describe("parseFr24FlightHistoryHtml", () => {
     const row = findFr24RowForDay(rows, "2026-04-15", "AMS", "DOH");
     expect(row).not.toBeNull();
     expect(row!.registration).toBe("A7-AMG");
+    expect(row!.aircraftCellText).toMatch(/A359|359/i);
+  });
+
+  it("parses plain-text aircraft cell when there is no /data/aircraft/ link", () => {
+    const html = readFileSync(fixturePath, "utf8");
+    const rows = parseFr24FlightHistoryHtml(html);
+    const row = findFr24RowForDay(rows, "2026-04-14", "AMS", "DOH");
+    expect(row).not.toBeNull();
+    expect(row!.registration).toBeNull();
+    expect(row!.aircraftCellText).toBe("359");
   });
 });

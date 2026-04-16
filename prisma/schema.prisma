@@ -1,5 +1,7 @@
 generator client {
   provider = "prisma-client-js"
+  // Repo-root folder (not under src/) so IDEs are less likely to lock query_engine-windows.dll.node on Windows.
+  output   = "../.prisma-client"
 }
 
 datasource db {
@@ -19,8 +21,10 @@ model DailyCompare {
   plannedDepartureLocal  String?
   actualRegistration     String?
   actualAircraftCell     String?
+  actualEquipment        String?
   actualQsuiteFromTail   Boolean?
   matchQsuite            Boolean?
+  matchEquipment         Boolean?
   fr24Error              String?
   source                 String   @default("fr24")
   createdAt              DateTime @default(now())
@@ -28,4 +32,30 @@ model DailyCompare {
 
   @@unique([compareDate, flight, routeKey])
   @@index([compareDate])
+}
+
+/// Qatar segments export (one row per `flight_id` from Python BFF exporter).
+model PlannedSegment {
+  id                String   @id @default(cuid())
+  flightId          String   @unique
+  queryDate         String
+  flightNumber      String
+  origin            String
+  destination       String
+  departureLocal    String
+  arrivalLocal      String
+  vehicleCode       String
+  vehicleName       String
+  vehicleShort      String
+  durationSec       Int?
+  qsuiteEquipped    Boolean?
+  starlink          Boolean?
+  operatingAirline  String?
+  offerOrigin       String?
+  offerDestination  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([flightNumber, origin, destination])
+  @@index([queryDate])
 }
