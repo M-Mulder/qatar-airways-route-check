@@ -302,11 +302,18 @@ function usePlaywrightForAirfleets(): boolean {
 
 /**
  * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
- * If **`GOOGLE_CSE_API_KEY`** + **`GOOGLE_CSE_ID`** are set, tries **Google Programmable Search** first
- * (indexed `ficheapp` snippets—often the same fields as the live page, no Airfleets WAF). Otherwise uses
- * **playwright-core** + **@sparticuz/chromium** (Vercel) or **Chrome** locally. Set `AIRFLEETS_BROWSER=0` to force HTTP-only.
+ *
+ * Order: **`SERPER_API_KEY`** → [Serper scrape](https://serper.dev) (recommended on Vercel). Else if
+ * **`GOOGLE_CSE_API_KEY`** + **`GOOGLE_CSE_ID`** → Programmable Search JSON. Else if browser mode on →
+ * **playwright-core** + **@sparticuz/chromium** (Vercel) or **Chrome** locally. Set **`AIRFLEETS_BROWSER=0`**
+ * to skip Playwright and use fragile HTTP-only fetches.
  */
 export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
+  const { serperConfigured, fetchAirfleetsWithSerper } = await import("@/lib/airfleetsSerper");
+  if (serperConfigured()) {
+    return fetchAirfleetsWithSerper(registration);
+  }
+
   if (!usePlaywrightForAirfleets()) {
     return fetchAirfleetsHttp(registration);
   }
