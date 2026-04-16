@@ -58,8 +58,14 @@ export async function runCompareForDates(
     const key = reg.toUpperCase().trim();
     let hit = airfleetsCache.get(key);
     if (!hit) {
+      // Visible in Vercel function logs (Airfleets only runs for rows that pass Qsuite+equipment gates).
+      console.info(`[compare] Airfleets fetch start registration=${key}`);
       hit = await fetchAirfleetsForRegistration(key);
       airfleetsCache.set(key, hit);
+      const err = typeof hit.error === "string" ? hit.error : "";
+      console.info(
+        `[compare] Airfleets fetch done registration=${key} ok=${!err} ${err ? `error=${err.slice(0, 120)}` : ""}`,
+      );
     }
     return hit as unknown as Prisma.InputJsonValue;
   }

@@ -29,17 +29,14 @@ async function getSharedBrowser(): Promise<Browser> {
   if (isVercel()) {
     const Chromium = (await import("@sparticuz/chromium")).default;
     const exe = await Chromium.executablePath();
+    // @sparticuz/chromium's `args` already include headless (e.g. `--headless='shell'`), sandbox, single-process,
+    // zygote, dev-shm, etc. Playwright adds its own `--headless` when `headless: true`, which duplicates/conflicts
+    // and the child exits immediately ("Target page, context or browser has been closed").
     sharedBrowser = await chromium.launch({
-      headless: true,
+      headless: false,
       executablePath: exe,
-      args: [
-        ...Chromium.args,
-        "--disable-blink-features=AutomationControlled",
-        "--disable-dev-shm-usage",
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--single-process",
-      ],
+      chromiumSandbox: false,
+      args: [...Chromium.args, "--disable-blink-features=AutomationControlled"],
     });
     return sharedBrowser;
   }
