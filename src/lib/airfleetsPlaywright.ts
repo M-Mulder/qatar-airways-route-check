@@ -204,6 +204,19 @@ async function snapshotSearchPage(page: Page, html: string, reg: string, searchU
   } catch {
     /* ignore */
   }
+  let frameUrls = "";
+  try {
+    frameUrls = trunc(
+      page
+        .frames()
+        .map((f) => f.url())
+        .join(" | "),
+      400,
+    );
+  } catch {
+    /* ignore */
+  }
+  const thin = html.length < 1500;
   return {
     url,
     htmlLen: html.length,
@@ -211,8 +224,11 @@ async function snapshotSearchPage(page: Page, html: string, reg: string, searchU
     tabRowCount,
     robotCount,
     cfCount,
+    frames: page.frames().length,
+    frameUrls: thin ? frameUrls : undefined,
     keywordHits: keywordHits.join(","),
     title: trunc(title, 120),
+    ...(thin ? { bodyPreview: trunc(html.replace(/\s+/g, " ").trim(), 500) } : {}),
   };
 }
 
@@ -242,15 +258,26 @@ async function snapshotPlanePage(page: Page, html: string, detailUrl: string): P
   };
 }
 
+/** Match @sparticuz/chromium / Playwright 147 so the site does not serve a bare document to an “old” client. */
+const CHROME_147_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36";
+
 async function newAirfleetsContext(reg: string): Promise<BrowserContext> {
   const browser = await getSharedBrowser(reg);
   afLog(reg, "context_new", { browserConnected: browser.isConnected() });
   const context = await browser.newContext({
-    userAgent:
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    userAgent: CHROME_147_UA,
     viewport: { width: 1365, height: 900 },
     locale: "en-US",
     timezoneId: "Europe/Amsterdam",
+    extraHTTPHeaders: {
+      "Accept-Language": "en-US,en;q=0.9",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+      "Upgrade-Insecure-Requests": "1",
+      "sec-ch-ua": '"Chromium";v="147", "Google Chrome";v="147", "Not?A_Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"Windows"',
+    },
   });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
@@ -271,11 +298,34 @@ export async function closeAirfleetsPlaywright(): Promise<void> {
   sharedBrowser = null;
 }
 
+/** Navigate like a cold browser session: wait for `load`, then try `networkidle` (bounded) so JS-heavy pages fill in. */
+async function airfleetsNavigate(page: Page, reg: string, url: string, event: string): Promise<void> {
+  afLog(reg, event, { url });
+  const res = await page.goto(url, { waitUntil: "load", timeout: 120_000 });
+  const status = res?.status() ?? null;
+  await page.waitForLoadState("networkidle", { timeout: 25_000 }).catch(() => {
+    afLog(reg, `${event}_networkidle_skipped`, { status });
+  });
+  const html = await page.content();
+  afLog(reg, `${event}_done`, {
+    finalUrl: safePageUrl(page),
+    status,
+    htmlLen: html.length,
+    frames: page.frames().length,
+    ...(html.length < 1500 ? { bodyPreview: trunc(html.replace(/\s+/g, " ").trim(), 500) } : {}),
+  });
+}
+
+/**
+ * Hit site root first (same idea as HTTP bootstrap in airfleets.ts) so CDN/session cookies exist before search.
+ * `domcontentloaded` alone often yields ~empty HTML on first paint for this stack.
+ */
 async function settleSearchPage(page: Page, searchUrl: string, registration: string): Promise<void> {
   const reg = registration.toUpperCase().trim();
-  afLog(reg, "search_goto", { searchUrl });
-  await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  afLog(reg, "search_goto_done", { url: safePageUrl(page) });
+  const home = `${BASE}/`;
+  await airfleetsNavigate(page, reg, home, "session_home");
+  await sleep(2000);
+  await airfleetsNavigate(page, reg, searchUrl, "search_goto");
   await sleep(2500);
 
   const deadline = Date.now() + 120_000;
@@ -307,7 +357,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     const url = page.url().toLowerCase();
     if (url.includes("captcha")) {
       afLog(reg, "search_url_has_captcha_reload", { url: page.url() });
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload_captcha");
       await sleep(3000);
       continue;
     }
@@ -323,9 +373,14 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     }
 
     reloads += 1;
-    if (reloads % 5 === 0) {
-      afLog(reg, "search_periodic_reload", { reloads });
-      await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    const thin = html.length < 2000;
+    if (thin || reloads % 5 === 0) {
+      afLog(reg, thin ? "search_reload_thin_document" : "search_periodic_reload", { reloads, htmlLen: html.length });
+      if (thin) {
+        await airfleetsNavigate(page, reg, home, "session_home_retry");
+        await sleep(1500);
+      }
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload");
       await sleep(2000);
     } else {
       await sleep(2200);
@@ -341,9 +396,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
 }
 
 async function settlePlanePage(page: Page, detailUrl: string, reg: string): Promise<string> {
-  afLog(reg, "plane_goto", { detailUrl });
-  await page.goto(detailUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
-  afLog(reg, "plane_goto_done", { url: safePageUrl(page) });
+  await airfleetsNavigate(page, reg, detailUrl, "plane_goto");
   await sleep(2000);
 
   const deadline = Date.now() + 90_000;
