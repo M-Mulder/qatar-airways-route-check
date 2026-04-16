@@ -170,7 +170,7 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
   return (
     <div className="ops-panel ops-scroll max-h-[min(70vh,720px)] overflow-auto p-1">
       <table className="ops-table min-w-[640px] text-xs">
-        <thead className="sticky top-0 z-10 bg-[var(--ops-elevated)] shadow-[0_1px_0_var(--ops-line-strong)]">
+        <thead className="bg-[var(--ops-elevated)]">
           <tr>
             <SortTh label="Snapshot date" sortKey="query_date" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
             <SortTh label="Flight" sortKey="flight_number" activeKey={sortKey} dir={sortDir} onSort={handleSort} />
