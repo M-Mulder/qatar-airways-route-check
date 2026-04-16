@@ -86,7 +86,7 @@ The [`vercel`](https://vercel.com/docs/cli) CLI is a **devDependency**. This rep
 
 3. **Deploy**: `npm run vercel:deploy` (or connect the GitHub repo in the Vercel dashboard for automatic deployments).
 
-The **build** runs `prisma migrate deploy` then `next build`, so production databases pick up migrations on each deploy (ensure `DATABASE_URL` is set for the Production environment before the first deploy).
+The **build** runs `next build` only (`postinstall` already runs `prisma generate`). Vercel does **not** run `migrate deploy` by default: existing databases (like a shared Retool instance) often hit **P3005** if the schema predates Prisma’s migration table. Apply schema changes with `npm run db:migrate` from a trusted machine, or use `npm run build:with-migrate` only on a **new empty** database after [baselining](https://www.prisma.io/docs/guides/migrate/production-troubleshooting#baseline-a-database-with-migrations).
 
 > **`npx plugins add vercel/vercel-plugin`** is a different tool (editor plugins). Use **`npx vercel`** / **`npm run vercel:deploy`** for deployment.
 

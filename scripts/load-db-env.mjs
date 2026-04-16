@@ -28,6 +28,7 @@ export function loadDbEnv(projectRoot) {
       ) {
         val = val.slice(1, -1);
       }
+      val = val.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
       process.env[key] = val;
     }
   }

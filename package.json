@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma migrate deploy && next build",
+    "build": "next build",
+    "build:with-migrate": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node scripts/prisma-generate-safe.mjs",
@@ -42,7 +43,7 @@
     "prisma": "5.22.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.4",
-    "vercel": "^41.0.0"
+    "vercel": "^51.5.0",
+    "vitest": "^4.1.4"
   }
 }

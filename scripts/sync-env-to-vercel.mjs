@@ -22,6 +22,16 @@ const KEYS = ["DATABASE_URL", "CRON_SECRET", "COMPARE_FLIGHTS"];
 const withPreview = process.argv.includes("--preview");
 const targets = withPreview ? ["production", "preview"] : ["production"];
 
+function normalizedEnvValue(key) {
+  const v = process.env[key];
+  if (v == null) return "";
+  return v
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .trim()
+    .replace(/^\uFEFF/, "");
+}
+
 function vercelSpawn(args, input) {
   const opts = {
     cwd: root,
@@ -29,14 +39,14 @@ function vercelSpawn(args, input) {
     stdio: input ? ["pipe", "inherit", "inherit"] : "inherit",
     shell: true,
   };
-  if (input) opts.input = input;
+  if (input !== undefined) opts.input = Buffer.from(input, "utf8");
   return spawnSync("npx", ["vercel", ...args], opts);
 }
 
 for (const target of targets) {
   console.log(`\n[sync-env-to-vercel] Target: ${target}`);
   for (const key of KEYS) {
-    const val = process.env[key]?.trim();
+    const val = normalizedEnvValue(key);
     if (!val) {
       if (key === "COMPARE_FLIGHTS") continue;
       console.warn(`[sync-env-to-vercel] Skip ${key}: not set in .env / .env.local`);
@@ -44,7 +54,8 @@ for (const target of targets) {
     }
     const args = ["env", "add", key, target, "--force"];
     if (key === "DATABASE_URL" || key === "CRON_SECRET") args.push("--sensitive");
-    const add = vercelSpawn(args, `${val}\n`);
+    // No trailing newline — Vercel rejects secrets used in headers if value has stray whitespace.
+    const add = vercelSpawn(args, val);
     if (add.status !== 0) {
       console.error(
         `[sync-env-to-vercel] Failed to set ${key} (${target}). Log in and link the project: npx vercel login && npx vercel link`,
