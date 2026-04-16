@@ -143,7 +143,7 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
     if (firstTodayIndex < 0) return;
     const row = firstTodayRowRef.current;
     if (!row) return;
-    const section = document.getElementById("imported-schedule");
+    const section = document.getElementById("upcoming-flights");
     section?.scrollIntoView({ behavior: "smooth", block: "start" });
     const t = window.setTimeout(() => {
       row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });

@@ -78,11 +78,11 @@ export default async function ComparePage() {
       ) : null}
 
       <section className="ops-reveal ops-reveal-d1 space-y-4">
-        <h2 className="ops-display text-xl text-[var(--ops-fg)]">Saved checks</h2>
+        <h2 className="ops-display text-xl text-[var(--ops-fg)]">Route check results</h2>
         <p className="text-sm text-[var(--ops-subtle)]">
-          Results when your published schedule was compared to what operated. Hover a{" "}
-          <span className="text-[var(--ops-muted)]">registration</span> for stored aircraft facts when the daily
-          check has saved them.
+          Where your published schedule lines up with what actually operated. Hover a{" "}
+          <span className="text-[var(--ops-muted)]">registration</span> for stored aircraft details when the daily
+          job has saved them.
         </p>
         {dbError ? (
           <div className="ops-alert ops-alert-warn">
@@ -90,7 +90,7 @@ export default async function ComparePage() {
           </div>
         ) : rows.length === 0 ? (
           <div className="max-w-2xl space-y-3">
-            <p className="text-sm text-[var(--ops-muted)]">No saved checks yet.</p>
+            <p className="text-sm text-[var(--ops-muted)]">No route check results yet.</p>
             {!plannedError && plannedRows.length > 0 ? (
               <p className="text-xs leading-relaxed text-[var(--ops-subtle)]">
                 A row appears here only when the daily job can match that flight for the date and route{" "}
@@ -99,7 +99,7 @@ export default async function ComparePage() {
                 and{" "}
                 <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs what operated).
                 If comparison data is missing, blocked, or the aircraft line does not match your schedule, nothing
-                is saved here—your imported schedule below still comes from the database.
+                is saved here—the upcoming flights table below still reflects your saved schedule.
               </p>
             ) : null}
           </div>
@@ -194,10 +194,10 @@ export default async function ComparePage() {
       </section>
 
       {!plannedError && plannedRows.length > 0 ? (
-        <section id="imported-schedule" className="ops-reveal ops-reveal-d2 space-y-4 scroll-mt-24">
-          <h2 className="ops-display text-xl text-[var(--ops-fg)]">Your imported schedule</h2>
+        <section id="upcoming-flights" className="ops-reveal ops-reveal-d2 space-y-4 scroll-mt-24">
+          <h2 className="ops-display text-xl text-[var(--ops-fg)]">Upcoming flights</h2>
           <p className="text-sm text-[var(--ops-subtle)]">
-            From your database export. Today&apos;s departures are highlighted and scrolled into view.
+            From your saved schedule. Today&apos;s departures are highlighted and scrolled into view.
           </p>
           <PlannedExportTable rows={plannedRows} />
         </section>
