@@ -1,11 +1,11 @@
 import type { DailyCompare } from "@/generated/prisma";
-import { buildCompareAnalytics } from "@/lib/compareAnalytics";
+// import { buildCompareAnalytics } from "@/lib/compareAnalytics";
 import { fr24FlightPath } from "@/lib/config";
 import { overallCompareMatch } from "@/lib/compareExplain";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import type { PlannedRow } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
-import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
+// import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
 import { QsuiteQMark } from "./QsuiteQMark";
 import { PlannedExportTable } from "./PlannedExportTable";
@@ -88,7 +88,8 @@ export default async function ComparePage() {
     }
   }
 
-  const analytics = buildCompareAnalytics(rows);
+  // Analytics panel (At a glance / bars): disabled for now — re-enable imports + line below + <CompareAnalyticsPanel />.
+  // const analytics = buildCompareAnalytics(rows);
 
   return (
     <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
@@ -219,7 +220,7 @@ export default async function ComparePage() {
                 })}
               </tbody>
             </table>
-            <CompareAnalyticsPanel analytics={analytics} />
+            {/* <CompareAnalyticsPanel analytics={analytics} /> */}
           </div>
         )}
       </section>
