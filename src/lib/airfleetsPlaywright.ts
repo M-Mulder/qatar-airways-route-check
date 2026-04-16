@@ -10,6 +10,15 @@ import { chromium } from "playwright-core";
 
 const BASE = "https://www.airfleets.net";
 
+/** Airfleets HTML is mostly server-rendered; keep post-`load` pauses short (cron + UX). */
+const MS_AFTER_NAV = 450;
+const MS_SEARCH_SELECTOR_WAIT = 4_000;
+const MS_POLL_IDLE = 900;
+const MS_AFTER_ROBOT_CLICK = 5_000;
+const MS_CF_PAUSE = 1_200;
+const MS_AFTER_CAPTCHA_RELOAD = 800;
+const MS_PLANE_AFTER_NAV = 500;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function isVercel(): boolean {
@@ -79,8 +88,12 @@ async function getSharedBrowser(reg?: string): Promise<Browser> {
     // playwright-core’s bundled protocol targets Chromium ~147 (see playwright-core/browsers.json). Using an
     // older @sparticuz/chromium (e.g. 131) causes immediate disconnect: "Target page, context or browser has been closed".
     // Match major with Playwright’s Chromium, per https://www.npmjs.com/package/@sparticuz/chromium (Playwright section).
+    // Sparticuz’s default list includes `--enable-automation` (puppeteer-style); that is a strong bot signal for Cloudflare.
+    const sparticuzArgs = Chromium.args.filter(
+      (a) => a !== "--enable-automation" && !a.startsWith("--enable-automation="),
+    );
     sharedBrowser = await chromium.launch({
-      args: [...Chromium.args, "--disable-blink-features=AutomationControlled"],
+      args: [...sparticuzArgs, "--disable-blink-features=AutomationControlled"],
       executablePath: exe,
       headless: true,
       chromiumSandbox: false,
@@ -270,17 +283,23 @@ async function newAirfleetsContext(reg: string): Promise<BrowserContext> {
     viewport: { width: 1365, height: 900 },
     locale: "en-US",
     timezoneId: "Europe/Amsterdam",
+    // Let Chromium emit `Sec-CH-UA*` / `Sec-Fetch-*` itself so hints match the real UA (static mismatches look bot-like).
     extraHTTPHeaders: {
       "Accept-Language": "en-US,en;q=0.9",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Upgrade-Insecure-Requests": "1",
-      "sec-ch-ua": '"Chromium";v="147", "Google Chrome";v="147", "Not?A_Brand";v="99"',
-      "sec-ch-ua-mobile": "?0",
-      "sec-ch-ua-platform": '"Windows"',
     },
   });
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    const w = window as Window & { chrome?: { runtime?: Record<string, unknown> } };
+    if (!w.chrome) w.chrome = { runtime: {} };
+    else if (!w.chrome.runtime) w.chrome.runtime = {};
+
+    const orig = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (details: PermissionDescriptor) =>
+      details.name === "notifications"
+        ? Promise.resolve({ state: Notification.permission, name: "notifications", onchange: null } as PermissionStatus)
+        : orig(details);
   });
   return context;
 }
@@ -298,14 +317,21 @@ export async function closeAirfleetsPlaywright(): Promise<void> {
   sharedBrowser = null;
 }
 
-/** Navigate like a cold browser session: wait for `load`, then try `networkidle` (bounded) so JS-heavy pages fill in. */
-async function airfleetsNavigate(page: Page, reg: string, url: string, event: string): Promise<void> {
-  afLog(reg, event, { url });
-  const res = await page.goto(url, { waitUntil: "load", timeout: 120_000 });
-  const status = res?.status() ?? null;
-  await page.waitForLoadState("networkidle", { timeout: 25_000 }).catch(() => {
-    afLog(reg, `${event}_networkidle_skipped`, { status });
+/** Wait for `load` only — `networkidle` often sits on ads/analytics far longer than the page needs. */
+async function airfleetsNavigate(
+  page: Page,
+  reg: string,
+  url: string,
+  event: string,
+  opts?: { referer?: string },
+): Promise<void> {
+  afLog(reg, event, { url, referer: opts?.referer ? trunc(opts.referer, 120) : "" });
+  const res = await page.goto(url, {
+    waitUntil: "load",
+    timeout: 120_000,
+    ...(opts?.referer ? { referer: opts.referer } : {}),
   });
+  const status = res?.status() ?? null;
   const html = await page.content();
   afLog(reg, `${event}_done`, {
     finalUrl: safePageUrl(page),
@@ -322,7 +348,7 @@ const SEARCH_RESULT_SELECTOR =
 
 async function waitForSearchDomSignals(page: Page, reg: string, label: string): Promise<boolean> {
   try {
-    await page.waitForSelector(SEARCH_RESULT_SELECTOR, { state: "attached", timeout: 45_000 });
+    await page.waitForSelector(SEARCH_RESULT_SELECTOR, { state: "attached", timeout: MS_SEARCH_SELECTOR_WAIT });
     afLog(reg, `${label}_result_dom_visible`, {});
     return true;
   } catch (e) {
@@ -340,8 +366,8 @@ async function tryClickDesktopVersionIfPresent(page: Page, reg: string): Promise
   await link.first().click({ timeout: 10_000 }).catch((e) => {
     afLog(reg, "search_desktop_version_click_failed", { message: e instanceof Error ? e.message : String(e) });
   });
-  await page.waitForLoadState("load", { timeout: 60_000 }).catch(() => {});
-  await sleep(2000);
+  await page.waitForLoadState("load", { timeout: 15_000 }).catch(() => {});
+  await sleep(MS_AFTER_NAV);
 }
 
 function attachAirfleetsResponseLogger(page: Page, reg: string): () => void {
@@ -369,12 +395,12 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
   const reg = registration.toUpperCase().trim();
   const home = `${BASE}/`;
   await airfleetsNavigate(page, reg, home, "session_home");
-  await sleep(2000);
-  await airfleetsNavigate(page, reg, searchUrl, "search_goto");
-  await sleep(1500);
+  await sleep(MS_AFTER_NAV);
+  await airfleetsNavigate(page, reg, searchUrl, "search_goto", { referer: `${BASE}/` });
+  await sleep(MS_AFTER_NAV);
   await tryClickDesktopVersionIfPresent(page, reg);
   await waitForSearchDomSignals(page, reg, "search_after_goto");
-  await sleep(1000);
+  await sleep(MS_AFTER_NAV);
 
   const deadline = Date.now() + 120_000;
   let reloads = 0;
@@ -398,15 +424,15 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     if ((await robot.count()) > 0) {
       afLog(reg, "search_robot_button_click", {});
       await robot.first().click();
-      await sleep(12_000);
+      await sleep(MS_AFTER_ROBOT_CLICK);
       continue;
     }
 
     const url = page.url().toLowerCase();
     if (url.includes("captcha")) {
       afLog(reg, "search_url_has_captcha_reload", { url: page.url() });
-      await airfleetsNavigate(page, reg, searchUrl, "search_reload_captcha");
-      await sleep(3000);
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload_captcha", { referer: `${BASE}/` });
+      await sleep(MS_AFTER_CAPTCHA_RELOAD);
       continue;
     }
 
@@ -416,7 +442,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     const cfN = await cf.count();
     if (cfN > 0) {
       afLog(reg, "search_cloudflare_like_wait", { cfN });
-      await sleep(4000);
+      await sleep(MS_CF_PAUSE);
       continue;
     }
 
@@ -427,14 +453,14 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
       if (thin) {
         await tryClickDesktopVersionIfPresent(page, reg);
         await airfleetsNavigate(page, reg, home, "session_home_retry");
-        await sleep(1500);
+        await sleep(MS_AFTER_NAV);
       }
-      await airfleetsNavigate(page, reg, searchUrl, "search_reload");
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload", { referer: `${BASE}/` });
       await tryClickDesktopVersionIfPresent(page, reg);
       await waitForSearchDomSignals(page, reg, "search_after_reload");
-      await sleep(2000);
+      await sleep(MS_AFTER_NAV);
     } else {
-      await sleep(2200);
+      await sleep(MS_POLL_IDLE);
     }
   }
 
@@ -446,9 +472,9 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
   }
 }
 
-async function settlePlanePage(page: Page, detailUrl: string, reg: string): Promise<string> {
-  await airfleetsNavigate(page, reg, detailUrl, "plane_goto");
-  await sleep(2000);
+async function settlePlanePage(page: Page, detailUrl: string, reg: string, searchPageReferer: string): Promise<string> {
+  await airfleetsNavigate(page, reg, detailUrl, "plane_goto", { referer: searchPageReferer });
+  await sleep(MS_PLANE_AFTER_NAV);
 
   const deadline = Date.now() + 90_000;
   let lastPlaneLog = Date.now();
@@ -472,11 +498,11 @@ async function settlePlanePage(page: Page, detailUrl: string, reg: string): Prom
     if ((await robot.count()) > 0) {
       afLog(reg, "plane_robot_button_click", {});
       await robot.first().click();
-      await sleep(12_000);
+      await sleep(MS_AFTER_ROBOT_CLICK);
       continue;
     }
 
-    await sleep(2500);
+    await sleep(MS_POLL_IDLE);
   }
 
   const html = await page.content();
@@ -526,7 +552,7 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
       }
       afLog(reg, "search_detail_url", { detailUrl });
 
-      const planeHtml = await settlePlanePage(page, detailUrl, reg);
+      const planeHtml = await settlePlanePage(page, detailUrl, reg, searchUrl);
       const parsed = parseAirfleetsPlanePage(planeHtml, detailUrl);
 
       let airline: string | null = null;
