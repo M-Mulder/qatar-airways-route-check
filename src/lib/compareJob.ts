@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { getPrisma } from "@/lib/prisma";
 import type { SegmentDef } from "@/lib/config";
 import { fetchFr24FlightHistoryHtml, findFr24RowForDay, parseFr24FlightHistoryHtml } from "@/lib/fr24FlightHistory";
 import {
@@ -37,6 +37,10 @@ export async function runCompareForDate(
   segments: SegmentDef[],
   plannedUrl: string,
 ): Promise<CompareJobResult> {
+  const prisma = getPrisma();
+  if (!prisma) {
+    throw new Error("DATABASE_URL is not set");
+  }
   const errors: string[] = [];
   const plannedText = await fetchPlannedCsv(plannedUrl);
   const plannedRows = parsePlannedCsv(plannedText);

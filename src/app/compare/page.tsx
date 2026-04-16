@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { prisma } from "@/lib/prisma";
+import type { DailyCompare } from "@prisma/client";
+import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import { fr24FlightPath } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
@@ -17,15 +18,22 @@ function label(match: boolean | null) {
 }
 
 export default async function ComparePage() {
-  let rows: Awaited<ReturnType<typeof prisma.dailyCompare.findMany>> = [];
+  let rows: DailyCompare[] = [];
   let dbError: string | null = null;
-  try {
-    rows = await prisma.dailyCompare.findMany({
-      orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
-      take: 150,
-    });
-  } catch (e) {
-    dbError = e instanceof Error ? e.message : String(e);
+
+  if (!hasDatabaseUrl()) {
+    dbError =
+      "DATABASE_URL is not set. For local dev, copy env.example to .env.local and add your Postgres connection string.";
+  } else {
+    const prisma = getPrisma()!;
+    try {
+      rows = await prisma.dailyCompare.findMany({
+        orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
+        take: 150,
+      });
+    } catch (e) {
+      dbError = e instanceof Error ? e.message : String(e);
+    }
   }
 
   return (
@@ -49,8 +57,9 @@ export default async function ComparePage() {
           <p className="font-medium">Database unavailable</p>
           <p className="mt-1 text-amber-900/90">{dbError}</p>
           <p className="mt-2 text-amber-900/80">
-            Set <code className="rounded bg-white/60 px-1">DATABASE_URL</code> (Vercel Postgres) and run{" "}
-            <code className="rounded bg-white/60 px-1">npx prisma migrate deploy</code>.
+            Local: <code className="rounded bg-white/60 px-1">.env.local</code> with <code className="rounded bg-white/60 px-1">DATABASE_URL</code>. Vercel: set the same in Project Settings → Environment Variables. Apply schema with{" "}
+            <code className="rounded bg-white/60 px-1">scripts/create-daily-compare-only.sql</code> or{" "}
+            <code className="rounded bg-white/60 px-1">npx prisma migrate deploy</code> on that database.
           </p>
         </div>
       ) : rows.length === 0 ? (
