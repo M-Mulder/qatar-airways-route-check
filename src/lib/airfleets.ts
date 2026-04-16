@@ -23,34 +23,109 @@ export type AirfleetsPayload = {
 };
 
 const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function norm(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
 }
 
-function fetchHtml(url: string, referer: string): Promise<string> {
+/** Set-Cookie lines → `Cookie` header value (name=value only). */
+function cookieHeaderFromResponse(res: Response): string {
+  const h = res.headers as Headers & { getSetCookie?: () => string[] };
+  const lines = typeof h.getSetCookie === "function" ? h.getSetCookie() : [];
+  return lines
+    .map((line) => line.split(";")[0]!.trim())
+    .filter(Boolean)
+    .join("; ");
+}
+
+function mergeCookieHeader(existing: string, add: string): string {
+  const m = new Map<string, string>();
+  for (const chunk of `${existing}; ${add}`.split(";")) {
+    const p = chunk.trim();
+    if (!p) continue;
+    const i = p.indexOf("=");
+    if (i > 0) m.set(p.slice(0, i).trim(), p.slice(i + 1).trim());
+  }
+  return [...m].map(([a, b]) => `${a}=${b}`).join("; ");
+}
+
+function secFetchSiteForReferer(referer: string): "same-origin" | "same-site" | "cross-site" | "none" {
+  try {
+    const r = new URL(referer);
+    const b = new URL(BASE);
+    if (r.origin === b.origin) return "same-origin";
+    return "cross-site";
+  } catch {
+    return "cross-site";
+  }
+}
+
+function browserHeaders(referer: string, cookie?: string): Record<string, string> {
+  const h: Record<string, string> = {
+    "user-agent": UA,
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "accept-language": "en-US,en;q=0.9",
+    "cache-control": "no-cache",
+    pragma: "no-cache",
+    "sec-ch-ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "sec-fetch-dest": "document",
+    "sec-fetch-mode": "navigate",
+    "sec-fetch-user": "?1",
+    "upgrade-insecure-requests": "1",
+  };
+  if (referer) {
+    h.referer = referer;
+    h["sec-fetch-site"] = secFetchSiteForReferer(referer);
+  } else {
+    h["sec-fetch-site"] = "none";
+  }
+  if (cookie?.trim()) h.cookie = cookie;
+  return h;
+}
+
+async function fetchHtmlStep(
+  url: string,
+  referer: string,
+  cookie: string,
+): Promise<{ html: string; cookie: string }> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 22_000);
-  return fetch(url, {
-    signal: ctrl.signal,
-    redirect: "follow",
-    headers: {
-      "user-agent": UA,
-      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-      "accept-language": "en-US,en;q=0.9",
-      referer,
-      "sec-fetch-dest": "document",
-      "sec-fetch-mode": "navigate",
-      "upgrade-insecure-requests": "1",
-    },
-    cache: "no-store",
-  })
-    .then(async (res) => {
-      if (!res.ok) throw new Error(`Airfleets HTTP ${res.status}`);
-      return res.text();
-    })
-    .finally(() => clearTimeout(t));
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: browserHeaders(referer, cookie || undefined),
+      cache: "no-store",
+    });
+    const next = mergeCookieHeader(cookie, cookieHeaderFromResponse(res));
+    if (!res.ok) throw new Error(`Airfleets HTTP ${res.status}`);
+    const html = await res.text();
+    return { html, cookie: next };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Establish a session cookie (many CDNs return 403 on “cold” search without a prior site hit).
+ */
+async function bootstrapAirfleetsCookie(): Promise<string> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15_000);
+  try {
+    const res = await fetch(`${BASE}/`, {
+      signal: ctrl.signal,
+      redirect: "follow",
+      headers: browserHeaders("", undefined),
+      cache: "no-store",
+    });
+    return cookieHeaderFromResponse(res);
+  } finally {
+    clearTimeout(t);
+  }
 }
 
 /** Resolve relative links from search page. */
@@ -68,7 +143,7 @@ function toAbsolute(href: string, fromUrl: string): string {
 export function parseAirfleetsSearchForDetailUrl(html: string, registration: string, searchUrl: string): string | null {
   const $ = cheerio.load(html);
   const reg = registration.toUpperCase().trim();
-  const rows = $('tr.tabcontent, tr[class*="tabcontent"]').toArray();
+  const rows = $('tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]').toArray();
   for (const tr of rows) {
     const $tr = $(tr);
     const rowText = norm($tr.text()).toUpperCase();
@@ -79,9 +154,25 @@ export function parseAirfleetsSearchForDetailUrl(html: string, registration: str
     if (!href.includes("plane-")) continue;
     return toAbsolute(href, searchUrl);
   }
-  const fallback = $(`a[href*="ficheapp/plane-"]`).filter((_, el) => norm($(el).text()) === reg).first();
-  const h = fallback.attr("href");
-  return h ? toAbsolute(h, searchUrl) : null;
+  const exactLink = $(`a[href*="ficheapp/plane-"]`).filter((_, el) => norm($(el).text()).toUpperCase() === reg).first();
+  const exactHref = exactLink.attr("href");
+  if (exactHref?.includes("plane-")) return toAbsolute(exactHref, searchUrl);
+
+  /** Any plane link in a table row whose text includes the registration (live HTML varies). */
+  let fromRow: string | null = null;
+  $(`a[href*="ficheapp/plane-"]`).each((_, el) => {
+    if (fromRow) return false;
+    const $a = $(el);
+    const $tr = $a.closest("tr");
+    const blob = $tr.length ? norm($tr.text()) : norm($a.text());
+    if (!blob.toUpperCase().includes(reg)) return;
+    const href = $a.attr("href");
+    if (href?.includes("plane-")) {
+      fromRow = toAbsolute(href, searchUrl);
+      return false;
+    }
+  });
+  return fromRow;
 }
 
 function parseSeatCounts(blob: string): { business: number | null; economy: number | null } {
@@ -140,10 +231,9 @@ export function parseAirfleetsPlanePage(html: string, detailUrl: string): Omit<A
 }
 
 /**
- * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
- * Best-effort HTML scrape — fragile; failures return `{ error, fetchedAt }`.
+ * Plain HTTP fetch (no JS). Airfleets often returns 403 / captcha redirect — use Playwright locally instead.
  */
-export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
+export async function fetchAirfleetsHttp(registration: string): Promise<AirfleetsPayload> {
   const fetchedAt = new Date().toISOString();
   const reg = registration.toUpperCase().trim();
   if (!reg || reg.length < 4) {
@@ -153,19 +243,35 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
   const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
 
   try {
-    const searchHtml = await fetchHtml(searchUrl, `${BASE}/home/`);
+    let cookie = await bootstrapAirfleetsCookie();
+    let searchHtml: string;
+    try {
+      const step = await fetchHtmlStep(searchUrl, `${BASE}/`, cookie);
+      searchHtml = step.html;
+      cookie = step.cookie;
+    } catch (first) {
+      const msg = first instanceof Error ? first.message : String(first);
+      if (!msg.includes("403")) throw first;
+      await new Promise((r) => setTimeout(r, 750));
+      cookie = mergeCookieHeader(cookie, await bootstrapAirfleetsCookie());
+      const step = await fetchHtmlStep(searchUrl, `${BASE}/`, cookie);
+      searchHtml = step.html;
+      cookie = step.cookie;
+    }
+
     const detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
     if (!detailUrl) {
       return { fetchedAt, searchUrl, error: "No matching aircraft row on Airfleets search." };
     }
 
-    const planeHtml = await fetchHtml(detailUrl, searchUrl);
+    const planeStep = await fetchHtmlStep(detailUrl, searchUrl, cookie);
+    const planeHtml = planeStep.html;
     const parsed = parseAirfleetsPlanePage(planeHtml, detailUrl);
 
     let airline: string | null = null;
     let lineStatus: string | null = null;
     const $s = cheerio.load(searchHtml);
-    $s('tr.tabcontent, tr[class*="tabcontent"]').each((_, tr) => {
+    $s('tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]').each((_, tr) => {
       const $tr = $s(tr);
       if (!norm($tr.text()).toUpperCase().includes(reg)) return;
       const tds = $tr.find("> td").toArray();
@@ -185,6 +291,47 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
     };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    return { fetchedAt, searchUrl, error: msg };
+    return { fetchedAt, searchUrl, error: formatAirfleetsErrorForStorage(msg) };
   }
+}
+
+function usePlaywrightForAirfleets(): boolean {
+  if (process.env.AIRFLEETS_BROWSER === "0" || process.env.AIRFLEETS_BROWSER === "false") return false;
+  return true;
+}
+
+/**
+ * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
+ * Uses **Playwright Chromium** by default (Airfleets captcha / Cloudflare; plain `fetch` fails).
+ * Vercel builds install Chromium with `PLAYWRIGHT_BROWSERS_PATH=0` during `postinstall` when `VERCEL=1`.
+ * Set `AIRFLEETS_BROWSER=0` to force HTTP-only (will usually 403 on Airfleets).
+ */
+export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
+  if (!usePlaywrightForAirfleets()) {
+    return fetchAirfleetsHttp(registration);
+  }
+  try {
+    const { fetchAirfleetsWithPlaywright } = await import("@/lib/airfleetsPlaywright");
+    return await fetchAirfleetsWithPlaywright(registration);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/Cannot find module ['"]playwright['"]|playwright/i.test(msg)) {
+      return fetchAirfleetsHttp(registration);
+    }
+    const reg = registration.toUpperCase().trim();
+    const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
+    return {
+      fetchedAt: new Date().toISOString(),
+      searchUrl,
+      error: formatAirfleetsErrorForStorage(msg),
+    };
+  }
+}
+
+/** User-facing error line (also stored in JSON). */
+export function formatAirfleetsErrorForStorage(raw: string): string {
+  if (/\b403\b|forbidden/i.test(raw)) {
+    return "Airfleets returned HTTP 403 (plain HTTP is blocked by captcha/Cloudflare). Use local `npm run cron:local` with Playwright, or open the search link in a browser.";
+  }
+  return raw;
 }

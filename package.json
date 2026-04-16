@@ -8,7 +8,7 @@
     "build:with-migrate": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
-    "postinstall": "node scripts/prisma-generate-safe.mjs",
+    "postinstall": "node scripts/prisma-generate-safe.mjs && node scripts/playwright-install-optional.mjs",
     "test": "vitest run",
     "db:generate": "node scripts/prisma-generate-safe.mjs",
     "db:migrate": "node scripts/prisma-with-env.mjs migrate deploy",
@@ -21,6 +21,7 @@
     "db:seed-planned": "node scripts/seed-planned-segments.mjs",
     "data:add-april16-sample": "node scripts/append-april16-sample.mjs",
     "cron:local": "node scripts/run-cron-compare-local.mjs",
+    "airfleets:probe": "node scripts/airfleets-playwright-probe.mjs",
     "vercel:sync-env": "node scripts/sync-env-to-vercel.mjs",
     "vercel:sync-env:preview": "node scripts/sync-env-to-vercel.mjs --preview",
     "vercel:deploy": "vercel deploy --prod"
@@ -31,6 +32,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "next": "16.2.4",
+    "playwright": "^1.59.1",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

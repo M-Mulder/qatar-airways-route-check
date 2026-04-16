@@ -2,12 +2,15 @@
  * Call GET /api/cron/compare like Vercel Cron (Bearer CRON_SECRET).
  * Loads `.env` then `.env.local` (same as Next).
  *
+ * Use this when Vercel Hobby has already used its one daily cron, or to test
+ * compare + Airfleets fetches without waiting for production.
+ *
  * Usage:
- *   node scripts/run-cron-compare-local.mjs
- *   node scripts/run-cron-compare-local.mjs 2026-04-15
+ *   npm run cron:local
+ *   npm run cron:local -- 2026-04-15
  *
  * Requires `next dev` (or `next start`) on CRON_LOCAL_PORT (default 3000).
- * Point DATABASE_URL at the DB you want to update (local or production Postgres via `.env.local`).
+ * Env: CRON_LOCAL_BASE (e.g. http://127.0.0.1:3000) overrides host/port.
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,10 +37,29 @@ if (dateArg) {
   url.searchParams.set("date", dateArg);
 }
 
-const res = await fetch(url, {
-  headers: { Authorization: `Bearer ${secret}` },
-  cache: "no-store",
-});
+let res;
+try {
+  res = await fetch(url, {
+    headers: { Authorization: `Bearer ${secret}` },
+    cache: "no-store",
+  });
+} catch (e) {
+  const code = e?.cause?.code ?? e?.code;
+  const isConn =
+    code === "ECONNREFUSED" ||
+    code === "ENOTFOUND" ||
+    /fetch failed|ECONNREFUSED|connect/i.test(String(e?.message ?? e));
+  if (isConn) {
+    console.error(
+      `Cannot reach ${url.origin}. Start the app first, then run this script again:\n` +
+        `  npm run dev\n` +
+        `  (in another terminal) npm run cron:local${dateArg ? ` -- ${dateArg}` : ""}`,
+    );
+  } else {
+    console.error(e);
+  }
+  process.exit(1);
+}
 const body = await res.text();
 console.log(`HTTP ${res.status}`);
 try {

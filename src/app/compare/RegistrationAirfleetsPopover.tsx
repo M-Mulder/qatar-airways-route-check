@@ -180,7 +180,24 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
           </h3>
 
           {data!.error ? (
-            <p className="ops-briefing-popover__body text-[var(--ops-amber)]">{data!.error}</p>
+            <div className="space-y-2.5">
+              <p className="ops-briefing-popover__body text-[var(--ops-amber)]">{data!.error}</p>
+              {data!.searchUrl ? (
+                <p className="m-0 text-xs leading-snug text-[var(--ops-muted)]">
+                  <a
+                    className="ops-link font-semibold text-[var(--ops-cyan)]"
+                    href={data!.searchUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open Airfleets search in browser ↗
+                  </a>
+                  <span className="block pt-1 text-[var(--ops-subtle)]">
+                    Captcha/Cloudflare block simple HTTP; run compare locally (`npm run cron:local`) so Airfleets loads in Chromium, or open the link above.
+                  </span>
+                </p>
+              ) : null}
+            </div>
           ) : (
             <>
               {(data!.aircraftFamily || data!.msn) && (

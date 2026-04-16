@@ -13,8 +13,8 @@ function unauthorized() {
 }
 
 /**
- * Secured compare job: GET with Authorization Bearer CRON_SECRET. Run on a schedule via your host of choice,
- * or locally: `npm run dev` then `npm run cron:local` (see README).
+ * Vercel Cron: GET with Authorization Bearer CRON_SECRET. Schedule is `vercel.json` (once daily on Hobby;
+ * e.g. 04:00 UTC ≈ 06:00 Europe/Amsterdam during CEST).
  * - No `?date=`: compare **yesterday, today, and tomorrow** (Europe/Amsterdam), intersected with dates
  *   **on or after** the earliest planned departure in Postgres for configured segments (avoids empty runs
  *   before your export starts). FR24 is fetched once per flight for the whole batch.

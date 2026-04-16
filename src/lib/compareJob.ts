@@ -78,6 +78,7 @@ export async function runCompareForDates(
   const uniqueDates = [...new Set(compareDateIsos)].sort();
   let segmentsProcessed = 0;
 
+  try {
   for (const compareDateIso of uniqueDates) {
     const compareDate = compareDateToPrisma(compareDateIso);
 
@@ -173,6 +174,14 @@ export async function runCompareForDates(
   }
 
   return { compareDates: uniqueDates, segmentsProcessed, errors };
+  } finally {
+    try {
+      const { closeAirfleetsPlaywright } = await import("@/lib/airfleetsPlaywright");
+      await closeAirfleetsPlaywright();
+    } catch {
+      /* noop — Playwright optional / not loaded */
+    }
+  }
 }
 
 /** Single calendar day (back-compat). */

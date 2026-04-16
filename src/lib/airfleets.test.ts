@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseAirfleetsPlanePage, parseAirfleetsSearchForDetailUrl } from "./airfleets";
+import { formatAirfleetsErrorForStorage, parseAirfleetsPlanePage, parseAirfleetsSearchForDetailUrl } from "./airfleets";
 
 const root = join(process.cwd(), "test/fixtures");
 
@@ -11,6 +11,24 @@ describe("parseAirfleetsSearchForDetailUrl", () => {
     const searchUrl = "https://www.airfleets.net/recherche/?key=A7-ALK";
     const url = parseAirfleetsSearchForDetailUrl(html, "A7-ALK", searchUrl);
     expect(url).toBe("https://www.airfleets.net/ficheapp/plane-a350-33.htm");
+  });
+
+  it("finds plane URL when row has no tabcontent class but row text includes reg", () => {
+    const html = `
+      <table><tr><td><a href="../ficheapp/plane-a350-33.htm">Airbus A350</a></td>
+      <td><a href="../ficheapp/plane-a350-33.htm">A7-ALK</a></td></tr></table>`;
+    const searchUrl = "https://www.airfleets.net/recherche/?key=A7-ALK";
+    expect(parseAirfleetsSearchForDetailUrl(html, "A7-ALK", searchUrl)).toBe(
+      "https://www.airfleets.net/ficheapp/plane-a350-33.htm",
+    );
+  });
+});
+
+describe("formatAirfleetsErrorForStorage", () => {
+  it("rewrites 403 for clearer UI copy", () => {
+    expect(formatAirfleetsErrorForStorage("Airfleets HTTP 403")).toContain("403");
+    expect(formatAirfleetsErrorForStorage("Airfleets HTTP 403")).toContain("browser");
+    expect(formatAirfleetsErrorForStorage("network down")).toBe("network down");
   });
 });
 

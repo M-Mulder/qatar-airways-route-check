@@ -1,0 +1,14 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/compare",
+      "schedule": "0 4 * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/cron/compare/route.ts": {
+      "maxDuration": 300,
+      "memory": 3008
+    }
+  }
+}
