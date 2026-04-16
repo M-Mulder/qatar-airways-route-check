@@ -29,14 +29,14 @@ async function getSharedBrowser(): Promise<Browser> {
   if (isVercel()) {
     const Chromium = (await import("@sparticuz/chromium")).default;
     const exe = await Chromium.executablePath();
-    // @sparticuz/chromium's `args` already include headless (e.g. `--headless='shell'`), sandbox, single-process,
-    // zygote, dev-shm, etc. Playwright adds its own `--headless` when `headless: true`, which duplicates/conflicts
-    // and the child exits immediately ("Target page, context or browser has been closed").
+    // playwright-core’s bundled protocol targets Chromium ~147 (see playwright-core/browsers.json). Using an
+    // older @sparticuz/chromium (e.g. 131) causes immediate disconnect: "Target page, context or browser has been closed".
+    // Match major with Playwright’s Chromium, per https://www.npmjs.com/package/@sparticuz/chromium (Playwright section).
     sharedBrowser = await chromium.launch({
-      headless: false,
-      executablePath: exe,
-      chromiumSandbox: false,
       args: [...Chromium.args, "--disable-blink-features=AutomationControlled"],
+      executablePath: exe,
+      headless: true,
+      chromiumSandbox: false,
     });
     return sharedBrowser;
   }
