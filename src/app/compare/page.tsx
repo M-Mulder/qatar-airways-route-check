@@ -1,9 +1,11 @@
 import type { DailyCompare } from "@/generated/prisma";
+import { buildCompareAnalytics } from "@/lib/compareAnalytics";
 import { fr24FlightPath } from "@/lib/config";
 import { overallCompareMatch } from "@/lib/compareExplain";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import type { PlannedRow } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
+import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
 import { PlannedExportTable } from "./PlannedExportTable";
 import { RegistrationAirfleetsPopover } from "./RegistrationAirfleetsPopover";
@@ -61,6 +63,8 @@ export default async function ComparePage() {
       dbError = e instanceof Error ? e.message : String(e);
     }
   }
+
+  const analytics = buildCompareAnalytics(rows);
 
   return (
     <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
@@ -189,6 +193,7 @@ export default async function ComparePage() {
                 })}
               </tbody>
             </table>
+            <CompareAnalyticsPanel analytics={analytics} />
           </div>
         )}
       </section>
