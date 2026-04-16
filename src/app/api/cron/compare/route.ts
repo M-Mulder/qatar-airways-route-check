@@ -13,7 +13,8 @@ function unauthorized() {
 }
 
 /**
- * Vercel Cron: GET with Authorization Bearer CRON_SECRET.
+ * Vercel Cron: GET with Authorization Bearer CRON_SECRET. Schedule is `vercel.json` (once daily on Hobby;
+ * e.g. 04:00 UTC ≈ 06:00 Europe/Amsterdam during CEST).
  * - No `?date=`: compare **yesterday, today, and tomorrow** (Europe/Amsterdam), intersected with dates
  *   **on or after** the earliest planned departure in Postgres for configured segments (avoids empty runs
  *   before your export starts). FR24 is fetched once per flight for the whole batch.

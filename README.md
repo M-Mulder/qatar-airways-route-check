@@ -6,7 +6,7 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (sto
 
 ## Features
 
-- **Vercel Cron** (twice daily) → `GET /api/cron/compare` (secured with `CRON_SECRET`). Each run may fetch **Airfleets.net** once per distinct tail to store MSN, type, seats (C/Y), age, etc. for the registration hover on `/compare`.
+- **Vercel Cron** (once per day on Hobby) → `GET /api/cron/compare` (secured with `CRON_SECRET`). Each run may fetch **Airfleets.net** once per distinct tail to store MSN, type, seats (C/Y), age, etc. for the registration hover on `/compare`.
 - **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
 - **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
@@ -92,14 +92,9 @@ The **build** runs `next build` only (`postinstall` already runs `prisma generat
 
 ## Cron (Vercel)
 
-[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** twice per day (UTC):
+[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`0 4 * * *`** (04:00 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
 
-| Schedule (UTC) | About Netherlands local |
-|----------------|-------------------------|
-| `0 6 * * *` | 07:00 **CET** / 08:00 **CEST** |
-| `35 17 * * *` | 18:35 **CET** / **19:35 CEST** (daylight saving) |
-
-Vercel crons are fixed in **UTC** only. The 17:35 UTC slot matches **19:35 in Amsterdam** while **CEST** is active (~late March–late October); in **CET** winter it runs at **18:35** local instead.
+That UTC time is **06:00 in Amsterdam** during **CEST** (daylight saving, roughly late March–late October). In **CET** (winter) the same cron runs at **05:00** local—Vercel has no timezone-aware cron, so pick the season you care about or accept the one-hour shift.
 
 Ensure **Cron Jobs** are enabled on the project and `CRON_SECRET` is set in Production.
 
