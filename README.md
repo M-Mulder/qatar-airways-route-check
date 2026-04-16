@@ -39,6 +39,8 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 | `DATABASE_URL` | PostgreSQL (e.g. [Vercel Postgres](https://vercel.com/docs/storage/vercel-postgres)) |
 | `CRON_SECRET` | Long random string; Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` |
 | `COMPARE_FLIGHTS` | Optional; comma-separated subset of `QR274,QR284,QR934` |
+| `GOOGLE_CSE_API_KEY` | Optional; [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview) key. When set with **`GOOGLE_CSE_ID`**, each tail lookup tries **Google’s indexed** Airfleets `ficheapp` snippet first (same facts as the SERP preview), then falls back to Playwright if needed. |
+| `GOOGLE_CSE_ID` | Programmable Search Engine **cx** value (engine must be allowed to return `airfleets.net` results). |
 
 ## Planned segments (database)
 

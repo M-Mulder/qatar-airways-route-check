@@ -175,7 +175,7 @@ export function parseAirfleetsSearchForDetailUrl(html: string, registration: str
   return fromRow;
 }
 
-function parseSeatCounts(blob: string): { business: number | null; economy: number | null } {
+export function parseSeatCounts(blob: string): { business: number | null; economy: number | null } {
   const t = blob.replace(/\u00a0/g, " ");
   const c = t.match(/C(\d+)/i);
   const y = t.match(/Y(\d+)/i);
@@ -302,14 +302,25 @@ function usePlaywrightForAirfleets(): boolean {
 
 /**
  * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
- * Uses **playwright-core** with **@sparticuz/chromium** on Vercel (small Linux Chromium) or **Google Chrome**
- * channel locally (Airfleets captcha / Cloudflare; plain `fetch` often fails).
- * Set `AIRFLEETS_BROWSER=0` to force HTTP-only everywhere.
+ * If **`GOOGLE_CSE_API_KEY`** + **`GOOGLE_CSE_ID`** are set, tries **Google Programmable Search** first
+ * (indexed `ficheapp` snippets—often the same fields as the live page, no Airfleets WAF). Otherwise uses
+ * **playwright-core** + **@sparticuz/chromium** (Vercel) or **Chrome** locally. Set `AIRFLEETS_BROWSER=0` to force HTTP-only.
  */
 export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
   if (!usePlaywrightForAirfleets()) {
     return fetchAirfleetsHttp(registration);
   }
+
+  const { googleCseConfigured, googleCsePayloadLooksUsable, tryFetchAirfleetsFromGoogleCse } = await import(
+    "@/lib/airfleetsGoogleCse"
+  );
+  if (googleCseConfigured()) {
+    const fromCse = await tryFetchAirfleetsFromGoogleCse(registration);
+    if (fromCse && googleCsePayloadLooksUsable(fromCse)) {
+      return fromCse;
+    }
+  }
+
   try {
     const { fetchAirfleetsWithPlaywright } = await import("@/lib/airfleetsPlaywright");
     return await fetchAirfleetsWithPlaywright(registration);

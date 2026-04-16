@@ -8,7 +8,7 @@
  *   node scripts/sync-env-to-vercel.mjs
  *   node scripts/sync-env-to-vercel.mjs --preview   # also sync preview
  *
- * Does not print values. Keys: DATABASE_URL, CRON_SECRET, COMPARE_FLIGHTS (if set).
+ * Does not print values. Keys: DATABASE_URL, CRON_SECRET, COMPARE_FLIGHTS, GOOGLE_CSE_* (if set).
  */
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -18,7 +18,7 @@ import { loadDbEnv } from "./load-db-env.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 loadDbEnv(root);
 
-const KEYS = ["DATABASE_URL", "CRON_SECRET", "COMPARE_FLIGHTS"];
+const KEYS = ["DATABASE_URL", "CRON_SECRET", "COMPARE_FLIGHTS", "GOOGLE_CSE_API_KEY", "GOOGLE_CSE_ID"];
 const withPreview = process.argv.includes("--preview");
 const targets = withPreview ? ["production", "preview"] : ["production"];
 
@@ -53,7 +53,7 @@ for (const target of targets) {
       continue;
     }
     const args = ["env", "add", key, target, "--force"];
-    if (key === "DATABASE_URL" || key === "CRON_SECRET") args.push("--sensitive");
+    if (key === "DATABASE_URL" || key === "CRON_SECRET" || key === "GOOGLE_CSE_API_KEY") args.push("--sensitive");
     // No trailing newline — Vercel rejects secrets used in headers if value has stray whitespace.
     const add = vercelSpawn(args, val);
     if (add.status !== 0) {
