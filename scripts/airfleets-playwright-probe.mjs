@@ -2,15 +2,25 @@
  * One-off probe: Airfleets search with Playwright (captcha / CF need a real browser).
  * Usage: node scripts/airfleets-playwright-probe.mjs A7-ALK
  */
-import { chromium } from "playwright";
+import { chromium } from "playwright-core";
 
 const reg = (process.argv[2] || "A7-ALK").toUpperCase();
 const searchUrl = `https://www.airfleets.net/recherche/?key=${encodeURIComponent(reg)}`;
 
-const browser = await chromium.launch({
-  headless: true,
-  args: ["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage", "--no-sandbox"],
-});
+const exe = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+const browser = await chromium.launch(
+  exe
+    ? {
+        headless: true,
+        executablePath: exe,
+        args: ["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage", "--no-sandbox"],
+      }
+    : {
+        headless: true,
+        channel: "chrome",
+        args: ["--disable-blink-features=AutomationControlled", "--disable-dev-shm-usage", "--no-sandbox"],
+      },
+);
 
 const context = await browser.newContext({
   userAgent:

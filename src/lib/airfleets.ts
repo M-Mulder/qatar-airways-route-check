@@ -297,16 +297,14 @@ export async function fetchAirfleetsHttp(registration: string): Promise<Airfleet
 
 function usePlaywrightForAirfleets(): boolean {
   if (process.env.AIRFLEETS_BROWSER === "0" || process.env.AIRFLEETS_BROWSER === "false") return false;
-  /** Vercel’s ~250 MB serverless cap cannot fit Playwright’s Chromium bundle; use `npm run cron:local` for Airfleets. */
-  if (process.env.VERCEL === "1" || process.env.VERCEL === "true") return false;
   return true;
 }
 
 /**
  * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
- * Uses **Playwright Chromium** when not on Vercel (Airfleets captcha / Cloudflare; plain `fetch` fails).
- * On **Vercel**, uses HTTP-only (often 403) because bundled Chromium exceeds the platform size limit.
- * Set `AIRFLEETS_BROWSER=0` to force HTTP-only locally too.
+ * Uses **playwright-core** with **@sparticuz/chromium** on Vercel (small Linux Chromium) or **Google Chrome**
+ * channel locally (Airfleets captcha / Cloudflare; plain `fetch` often fails).
+ * Set `AIRFLEETS_BROWSER=0` to force HTTP-only everywhere.
  */
 export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
   if (!usePlaywrightForAirfleets()) {
@@ -317,7 +315,7 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
     return await fetchAirfleetsWithPlaywright(registration);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (/Cannot find module ['"]playwright['"]|playwright/i.test(msg)) {
+    if (/Cannot find module ['"]playwright-core['"]|playwright-core|@sparticuz\/chromium/i.test(msg)) {
       return fetchAirfleetsHttp(registration);
     }
     const reg = registration.toUpperCase().trim();
@@ -333,7 +331,7 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
 /** User-facing error line (also stored in JSON). */
 export function formatAirfleetsErrorForStorage(raw: string): string {
   if (/\b403\b|forbidden/i.test(raw)) {
-    return "Airfleets returned HTTP 403 (plain HTTP is blocked by captcha/Cloudflare). Use local `npm run cron:local` with Playwright, or open the search link in a browser.";
+    return "Airfleets returned HTTP 403 (plain HTTP is blocked by captcha/Cloudflare). Ensure browser mode is enabled (default), or open the search link in a desktop browser.";
   }
   return raw;
 }

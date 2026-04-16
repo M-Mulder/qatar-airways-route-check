@@ -5,13 +5,18 @@ import {
   parseAirfleetsPlanePage,
   parseAirfleetsSearchForDetailUrl,
 } from "@/lib/airfleets";
-import type { Browser, BrowserContext } from "playwright";
+import type { Browser, BrowserContext, Page } from "playwright-core";
+import { chromium } from "playwright-core";
 
 const BASE = "https://www.airfleets.net";
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-/** One Chromium process for the whole compare job; **fresh context per tail** so Cloudflare/captcha state does not stick across registrations. */
+function isVercel(): boolean {
+  return process.env.VERCEL === "1" || process.env.VERCEL === "true";
+}
+
+/** One browser for the whole compare job; fresh context per tail. */
 let sharedBrowser: Browser | null = null;
 
 function norm(s: string): string {
@@ -20,20 +25,54 @@ function norm(s: string): string {
 
 async function getSharedBrowser(): Promise<Browser> {
   if (sharedBrowser) return sharedBrowser;
-  const { chromium } = await import("playwright");
+
+  if (isVercel()) {
+    const Chromium = (await import("@sparticuz/chromium")).default;
+    const exe = await Chromium.executablePath();
+    sharedBrowser = await chromium.launch({
+      headless: true,
+      executablePath: exe,
+      args: [
+        ...Chromium.args,
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--single-process",
+      ],
+    });
+    return sharedBrowser;
+  }
+
   const headed = process.env.PLAYWRIGHT_AIRFLEETS_HEADED === "1" || process.env.PLAYWRIGHT_AIRFLEETS_HEADED === "true";
   const channelRaw = (process.env.PLAYWRIGHT_AIRFLEETS_CHANNEL || "").trim();
   const channel =
-    channelRaw === "chrome" || channelRaw === "msedge" || channelRaw === "chrome-beta" ? channelRaw : undefined;
-  sharedBrowser = await chromium.launch({
-    headless: !headed,
-    channel,
-    args: [
-      "--disable-blink-features=AutomationControlled",
-      "--disable-dev-shm-usage",
-      "--no-sandbox",
-    ],
-  });
+    channelRaw === "chrome" || channelRaw === "msedge" || channelRaw === "chrome-beta"
+      ? channelRaw
+      : "chrome";
+
+  const exe = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+  if (exe) {
+    sharedBrowser = await chromium.launch({
+      headless: !headed,
+      executablePath: exe,
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+      ],
+    });
+  } else {
+    sharedBrowser = await chromium.launch({
+      headless: !headed,
+      channel,
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--disable-dev-shm-usage",
+        "--no-sandbox",
+      ],
+    });
+  }
   return sharedBrowser;
 }
 
@@ -53,7 +92,7 @@ async function newAirfleetsContext(): Promise<BrowserContext> {
 }
 
 /**
- * Close shared Playwright browser (call after compare job when using browser mode).
+ * Close shared browser (call after compare job when using browser mode).
  */
 export async function closeAirfleetsPlaywright(): Promise<void> {
   if (!sharedBrowser) return;
@@ -65,15 +104,7 @@ export async function closeAirfleetsPlaywright(): Promise<void> {
   sharedBrowser = null;
 }
 
-/**
- * Wait until search HTML contains a parseable plane link. Do not rely on Playwright "visible"
- * checks — Cloudflare overlays and late paint often keep `tr.tabcontent` attached but not visible.
- */
-async function settleSearchPage(
-  page: import("playwright").Page,
-  searchUrl: string,
-  registration: string,
-): Promise<void> {
+async function settleSearchPage(page: Page, searchUrl: string, registration: string): Promise<void> {
   await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await sleep(2500);
 
@@ -101,7 +132,6 @@ async function settleSearchPage(
       continue;
     }
 
-    // Cloudflare / challenge overlay: wait for it to clear, then re-check.
     const cf = page.locator(
       "#challenge-running, .cf-browser-verification, #challenge-stage, iframe[src*='challenges.cloudflare']",
     );
@@ -125,7 +155,7 @@ async function settleSearchPage(
   }
 }
 
-async function settlePlanePage(page: import("playwright").Page, detailUrl: string): Promise<string> {
+async function settlePlanePage(page: Page, detailUrl: string): Promise<string> {
   await page.goto(detailUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
   await sleep(2000);
 
@@ -153,8 +183,8 @@ async function settlePlanePage(page: import("playwright").Page, detailUrl: strin
 }
 
 /**
- * Real Chromium session — Airfleets uses captcha / Cloudflare gates that block plain `fetch`.
- * Use on Node locally or any host with Playwright browsers installed; not for Vercel serverless.
+ * Airfleets via real Chromium: **@sparticuz/chromium** on Vercel (small Linux build), **playwright-core**
+ * with installed **Google Chrome** channel locally (or `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`).
  */
 export async function fetchAirfleetsWithPlaywright(registration: string): Promise<AirfleetsPayload> {
   const fetchedAt = new Date().toISOString();
