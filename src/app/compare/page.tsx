@@ -7,6 +7,7 @@ import type { PlannedRow } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
 import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
+import { QsuiteQMark } from "./QsuiteQMark";
 import { PlannedExportTable } from "./PlannedExportTable";
 import { RegistrationAirfleetsPopover } from "./RegistrationAirfleetsPopover";
 
@@ -22,6 +23,29 @@ function label(match: boolean | null) {
   if (match === true) return "Aligned";
   if (match === false) return "Not aligned";
   return "Unclear";
+}
+
+function ScheduledAircraftCell({
+  equipment,
+  qsuiteScheduled,
+}: {
+  equipment: string | null;
+  qsuiteScheduled: boolean | null;
+}) {
+  const raw = (equipment ?? "").trim();
+  const text = raw ? raw.toLowerCase() : "—";
+  return (
+    <span className="inline-flex flex-wrap items-baseline gap-x-1">
+      <span>{text}</span>
+      {qsuiteScheduled === true ? (
+        <span className="inline-flex items-center gap-0 text-[var(--ops-subtle)]" title="Scheduled Qsuite">
+          <span>(</span>
+          <QsuiteQMark />
+          <span>)</span>
+        </span>
+      ) : null}
+    </span>
+  );
 }
 
 export default async function ComparePage() {
@@ -142,7 +166,9 @@ export default async function ComparePage() {
                       <td className="ops-table-mono text-[var(--ops-fg)]">{r.compareDate.toISOString().slice(0, 10)}</td>
                       <td className="text-[var(--ops-fg)]">{r.routeKey}</td>
                       <td className="font-semibold tracking-tight text-[var(--ops-copper)]">{r.flight}</td>
-                      <td className="text-[var(--ops-muted)]">{r.plannedEquipment ?? "—"}</td>
+                      <td className="text-[var(--ops-muted)]">
+                        <ScheduledAircraftCell equipment={r.plannedEquipment} qsuiteScheduled={r.plannedQsuiteApi} />
+                      </td>
                       <td className="text-[var(--ops-muted)]">{r.actualEquipment ?? "—"}</td>
                       <td className="text-[var(--ops-muted)]">
                         {r.plannedQsuiteApi === null ? "—" : r.plannedQsuiteApi ? "Yes" : "No"}

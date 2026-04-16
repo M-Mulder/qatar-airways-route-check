@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PlannedRow } from "@/lib/plannedCsv";
 import { departureDateKey } from "@/lib/plannedCsv";
+import { QsuiteQMark } from "./QsuiteQMark";
 
 function localCalendarDateIso(): string {
   const d = new Date();
@@ -40,6 +41,12 @@ function routeLabel(r: PlannedRow): string {
 
 function typeLabel(r: PlannedRow): string {
   return (r.vehicle_short || r.vehicle_name || "").trim() || "—";
+}
+
+/** Lowercase aircraft label for display, e.g. `a359`; matches sort key casing via typeLabel. */
+function aircraftDisplayText(r: PlannedRow): string {
+  const t = typeLabel(r);
+  return t === "—" ? t : t.toLowerCase();
 }
 
 function qsuiteRank(v: boolean | null): number {
@@ -204,7 +211,21 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
                 {r.origin}–{r.destination}
               </td>
               <td className="ops-table-mono text-[var(--ops-fg)]">{r.departure_local}</td>
-              <td className="text-[var(--ops-muted)]">{r.vehicle_short || r.vehicle_name || "—"}</td>
+              <td className="text-[var(--ops-muted)]">
+                <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                  <span>{aircraftDisplayText(r)}</span>
+                  {r.qsuite_equipped === true ? (
+                    <span
+                      className="inline-flex items-center gap-0 text-[var(--ops-subtle)]"
+                      title="Scheduled Qsuite"
+                    >
+                      <span>(</span>
+                      <QsuiteQMark />
+                      <span>)</span>
+                    </span>
+                  ) : null}
+                </span>
+              </td>
               <td className="ops-table-mono">{r.vehicle_code || "—"}</td>
               <td className="text-[var(--ops-muted)]">
                 {r.qsuite_equipped === null ? "—" : r.qsuite_equipped ? "Yes" : "No"}
