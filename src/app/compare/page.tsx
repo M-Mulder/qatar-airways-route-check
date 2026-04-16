@@ -6,6 +6,7 @@ import type { PlannedRow } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
 import { PlannedExportTable } from "./PlannedExportTable";
+import { RegistrationAirfleetsPopover } from "./RegistrationAirfleetsPopover";
 
 export const dynamic = "force-dynamic";
 
@@ -79,7 +80,9 @@ export default async function ComparePage() {
       <section className="ops-reveal ops-reveal-d1 space-y-4">
         <h2 className="ops-display text-xl text-[var(--ops-fg)]">Saved checks</h2>
         <p className="text-sm text-[var(--ops-subtle)]">
-          Results when your schedule was compared to live flight data (Flightradar24).
+          Results when your schedule was compared to live flight data (Flightradar24). Hover a{" "}
+          <span className="text-[var(--ops-muted)]">registration</span> for Airfleets aircraft details when the
+          compare job has stored them.
         </p>
         {dbError ? (
           <div className="ops-alert ops-alert-warn">
@@ -141,7 +144,12 @@ export default async function ComparePage() {
                       <td className="text-[var(--ops-muted)]">
                         {r.plannedQsuiteApi === null ? "—" : r.plannedQsuiteApi ? "Yes" : "No"}
                       </td>
-                      <td className="ops-table-mono text-[var(--ops-cyan)]">{r.actualRegistration ?? "—"}</td>
+                      <td className="align-middle">
+                        <RegistrationAirfleetsPopover
+                          registration={r.actualRegistration}
+                          payload={r.airfleetsPayload}
+                        />
+                      </td>
                       <td className="text-[var(--ops-muted)]">
                         {r.actualQsuiteFromTail === null ? "—" : r.actualQsuiteFromTail ? "Yes" : "No"}
                       </td>

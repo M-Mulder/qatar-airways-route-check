@@ -1,3 +1,5 @@
+import { Prisma } from "@/generated/prisma";
+import { fetchAirfleetsForRegistration, type AirfleetsPayload } from "@/lib/airfleets";
 import { getPrisma } from "@/lib/prisma";
 import type { SegmentDef } from "@/lib/config";
 import { fetchFr24FlightHistoryHtml, findFr24RowForDay, parseFr24FlightHistoryHtml } from "@/lib/fr24FlightHistory";
@@ -48,7 +50,19 @@ export async function runCompareForDates(
   const errors: string[] = [];
 
   const fr24Cache = new Map<string, ReturnType<typeof parseFr24FlightHistoryHtml>>();
+  const airfleetsCache = new Map<string, AirfleetsPayload>();
   const flightsNeeded = [...new Set(segments.map((s) => s.flight))];
+
+  async function airfleetsForRegistration(reg: string | null): Promise<Prisma.InputJsonValue | null> {
+    if (!reg?.trim()) return null;
+    const key = reg.toUpperCase().trim();
+    let hit = airfleetsCache.get(key);
+    if (!hit) {
+      hit = await fetchAirfleetsForRegistration(key);
+      airfleetsCache.set(key, hit);
+    }
+    return hit as unknown as Prisma.InputJsonValue;
+  }
 
   for (const flight of flightsNeeded) {
     try {
@@ -111,6 +125,8 @@ export async function runCompareForDates(
         continue;
       }
 
+      const airfleetsPayload = await airfleetsForRegistration(actualRegistration);
+
       await prisma.dailyCompare.upsert({
         where: {
           compareDate_flight_routeKey: {
@@ -134,6 +150,7 @@ export async function runCompareForDates(
           matchQsuite: mq,
           matchEquipment: eqMatch,
           fr24Error,
+          ...(airfleetsPayload != null ? { airfleetsPayload } : {}),
           source: "fr24",
         },
         update: {
@@ -148,6 +165,7 @@ export async function runCompareForDates(
           matchQsuite: mq,
           matchEquipment: eqMatch,
           fr24Error,
+          airfleetsPayload: airfleetsPayload ?? Prisma.DbNull,
         },
       });
       segmentsProcessed += 1;

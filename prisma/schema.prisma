@@ -26,6 +26,8 @@ model DailyCompare {
   matchQsuite            Boolean?
   matchEquipment         Boolean?
   fr24Error              String?
+  /// Parsed Airfleets.net aircraft page (cron); shown on registration hover.
+  airfleetsPayload       Json?
   source                 String   @default("fr24")
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
