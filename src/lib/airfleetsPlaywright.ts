@@ -19,6 +19,9 @@ const MS_CF_PAUSE = 1_200;
 const MS_AFTER_CAPTCHA_RELOAD = 800;
 const MS_PLANE_AFTER_NAV = 500;
 
+/** Below this length, `page.content()` is almost certainly a stub shell, not real Airfleets markup. */
+const MIN_SUBSTANTIAL_HTML = 800;
+
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function isVercel(): boolean {
@@ -293,6 +296,8 @@ async function newAirfleetsContext(reg: string): Promise<BrowserContext> {
     viewport: { width: 1365, height: 900 },
     locale: "en-US",
     timezoneId: "Europe/Amsterdam",
+    // If Airfleets (or a CDN) uses strict CSP, blocked scripts can leave a 200 OK empty shell; bypass helps only on trusted pages.
+    ...(isVercel() ? { bypassCSP: true } : {}),
     // Let Chromium emit `Sec-CH-UA*` / `Sec-Fetch-*` itself so hints match the real UA (static mismatches look bot-like).
     extraHTTPHeaders: {
       "Accept-Language": "en-US,en;q=0.9",
@@ -327,7 +332,48 @@ export async function closeAirfleetsPlaywright(): Promise<void> {
   sharedBrowser = null;
 }
 
-/** Wait for `load` only — `networkidle` often sits on ads/analytics far longer than the page needs. */
+/**
+ * After `load`, some stacks still have an empty `<body>` (SPA shell or blocked scripts). Try `networkidle` + a short DOM
+ * wait only when HTML is suspiciously small — avoids slowing normal navigations.
+ */
+async function maybeHydrateThinDocument(page: Page, reg: string, event: string): Promise<void> {
+  let html = await page.content();
+  if (html.length >= MIN_SUBSTANTIAL_HTML) return;
+
+  afLog(reg, `${event}_thin_doc_attempt`, { htmlLen: html.length });
+  await page.waitForLoadState("networkidle", { timeout: 14_000 }).catch((e) => {
+    afLog(reg, `${event}_thin_doc_networkidle_skip`, { message: e instanceof Error ? e.message : String(e) });
+  });
+  html = await page.content();
+  if (html.length >= MIN_SUBSTANTIAL_HTML) {
+    afLog(reg, `${event}_thin_doc_networkidle_ok`, { htmlLen: html.length });
+    return;
+  }
+
+  await page
+    .waitForFunction(
+      () => {
+        const body = document.body;
+        if (!body) return false;
+        const text = body.innerText?.replace(/\s+/g, " ").trim() ?? "";
+        if (text.length > 50) return true;
+        return (
+          document.querySelector(
+            "table, main, article, a[href*='ficheapp'], tr.tabcontent, [id*='content'], [class*='content']",
+          ) != null
+        );
+      },
+      { timeout: 12_000 },
+    )
+    .catch((e) => {
+      afLog(reg, `${event}_thin_doc_waitfn_timeout`, { message: e instanceof Error ? e.message : String(e) });
+    });
+
+  html = await page.content();
+  afLog(reg, `${event}_thin_doc_after_waitfn`, { htmlLen: html.length });
+}
+
+/** Wait for `load` first; optionally extend with `maybeHydrateThinDocument` when the document looks like a stub. */
 async function airfleetsNavigate(
   page: Page,
   reg: string,
@@ -342,6 +388,7 @@ async function airfleetsNavigate(
     ...(opts?.referer ? { referer: opts.referer } : {}),
   });
   const status = res?.status() ?? null;
+  await maybeHydrateThinDocument(page, reg, event);
   const html = await page.content();
   afLog(reg, `${event}_done`, {
     finalUrl: safePageUrl(page),
@@ -480,15 +527,15 @@ function attachAirfleetsResponseLogger(page: Page, reg: string): () => void {
 }
 
 /**
- * Hit site root first (same idea as HTTP bootstrap in airfleets.ts) so CDN/session cookies exist before search.
+ * Hit `/home/` first (root often 302s here) so CDN/session cookies exist before search — same idea as HTTP bootstrap in airfleets.ts.
  * `domcontentloaded` alone often yields ~empty HTML on first paint for this stack.
  */
 async function settleSearchPage(page: Page, searchUrl: string, registration: string): Promise<void> {
   const reg = registration.toUpperCase().trim();
-  const home = `${BASE}/`;
+  const home = `${BASE}/home/`;
   await airfleetsNavigate(page, reg, home, "session_home");
   await sleep(MS_AFTER_NAV);
-  await airfleetsNavigate(page, reg, searchUrl, "search_goto", { referer: `${BASE}/` });
+  await airfleetsNavigate(page, reg, searchUrl, "search_goto", { referer: home });
   await sleep(MS_AFTER_NAV);
   await tryClickDesktopVersionIfPresent(page, reg);
   await waitForSearchDomSignals(page, reg, "search_after_goto");
@@ -500,6 +547,11 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
 
   while (Date.now() < deadline) {
     const html = await page.content();
+    if (html.length < 500 && reloads >= 2) {
+      throw new Error(
+        "Airfleets returned an empty or stub HTML document to the browser (common for serverless/datacenter egress). Configure GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID for programmable search, or run Airfleets from a non-Vercel environment with normal browser egress.",
+      );
+    }
     if (parseAirfleetsSearchForDetailUrl(html, reg, searchUrl)) {
       afLog(reg, "search_settled_ok", await snapshotSearchPage(page, html, reg, searchUrl));
       return;
@@ -523,7 +575,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     const url = page.url().toLowerCase();
     if (url.includes("captcha")) {
       afLog(reg, "search_url_has_captcha_reload", { url: page.url() });
-      await airfleetsNavigate(page, reg, searchUrl, "search_reload_captcha", { referer: `${BASE}/` });
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload_captcha", { referer: home });
       await sleep(MS_AFTER_CAPTCHA_RELOAD);
       continue;
     }
@@ -547,7 +599,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
         await airfleetsNavigate(page, reg, home, "session_home_retry");
         await sleep(MS_AFTER_NAV);
       }
-      await airfleetsNavigate(page, reg, searchUrl, "search_reload", { referer: `${BASE}/` });
+      await airfleetsNavigate(page, reg, searchUrl, "search_reload", { referer: home });
       await tryClickDesktopVersionIfPresent(page, reg);
       await waitForSearchDomSignals(page, reg, "search_after_reload");
       await sleep(MS_AFTER_NAV);
