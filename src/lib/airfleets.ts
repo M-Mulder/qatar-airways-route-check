@@ -297,14 +297,16 @@ export async function fetchAirfleetsHttp(registration: string): Promise<Airfleet
 
 function usePlaywrightForAirfleets(): boolean {
   if (process.env.AIRFLEETS_BROWSER === "0" || process.env.AIRFLEETS_BROWSER === "false") return false;
+  /** Vercel’s ~250 MB serverless cap cannot fit Playwright’s Chromium bundle; use `npm run cron:local` for Airfleets. */
+  if (process.env.VERCEL === "1" || process.env.VERCEL === "true") return false;
   return true;
 }
 
 /**
  * Fetch search + detail from Airfleets.net for a Qatar-style registration (e.g. A7-ALK).
- * Uses **Playwright Chromium** by default (Airfleets captcha / Cloudflare; plain `fetch` fails).
- * Vercel builds install Chromium with `PLAYWRIGHT_BROWSERS_PATH=0` during `postinstall` when `VERCEL=1`.
- * Set `AIRFLEETS_BROWSER=0` to force HTTP-only (will usually 403 on Airfleets).
+ * Uses **Playwright Chromium** when not on Vercel (Airfleets captcha / Cloudflare; plain `fetch` fails).
+ * On **Vercel**, uses HTTP-only (often 403) because bundled Chromium exceeds the platform size limit.
+ * Set `AIRFLEETS_BROWSER=0` to force HTTP-only locally too.
  */
 export async function fetchAirfleetsForRegistration(registration: string): Promise<AirfleetsPayload> {
   if (!usePlaywrightForAirfleets()) {

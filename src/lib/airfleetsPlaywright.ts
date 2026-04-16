@@ -20,10 +20,6 @@ function norm(s: string): string {
 
 async function getSharedBrowser(): Promise<Browser> {
   if (sharedBrowser) return sharedBrowser;
-  /** Hermetic install on Vercel (`postinstall`); must match runtime so Chromium is found. */
-  if (process.env.VERCEL === "1" && process.env.PLAYWRIGHT_BROWSERS_PATH === undefined) {
-    process.env.PLAYWRIGHT_BROWSERS_PATH = "0";
-  }
   const { chromium } = await import("playwright");
   const headed = process.env.PLAYWRIGHT_AIRFLEETS_HEADED === "1" || process.env.PLAYWRIGHT_AIRFLEETS_HEADED === "true";
   const channelRaw = (process.env.PLAYWRIGHT_AIRFLEETS_CHANNEL || "").trim();
