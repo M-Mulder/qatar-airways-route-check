@@ -55,12 +55,13 @@ async function serperScrapePage(targetUrl: string): Promise<SerperScrapeJson> {
 
 /**
  * Airfleets `ficheapp` path segment after `plane-`, e.g. Airbus A350 + MSN 33 → `a350-33`.
+ * Boeing uses the **base** model only in the slug (e.g. `plane-b777-36010.htm`), not `777-300ER`.
  */
 export function planeSlugFromAircraft(aircraft: string): string | null {
   const t = norm(aircraft);
   const airbus = t.match(/\bAirbus\s+(A\d{2,4}[A-Za-z0-9-]*)\b/i);
   if (airbus) return airbus[1]!.toLowerCase();
-  const boeing = t.match(/\bBoeing\s+(\d{3}[A-Za-z0-9-]*)\b/i);
+  const boeing = t.match(/\bBoeing\s+(\d{3})\b/i);
   if (boeing) return `b${boeing[1]!.toLowerCase()}`;
   const emb = t.match(/\bEmbraer\s+([Ee]\d+[-\w]*)\b/i);
   if (emb) return emb[1]!.toLowerCase();

@@ -55,7 +55,8 @@ describe("planeSlugFromAircraft", () => {
     expect(planeSlugFromAircraft("Airbus A350")).toBe("a350");
     expect(planeSlugFromAircraft("Airbus A330-900")).toBe("a330-900");
     expect(planeSlugFromAircraft("Boeing 777")).toBe("b777");
-    expect(planeSlugFromAircraft("Boeing 787-9")).toBe("b787-9");
+    expect(planeSlugFromAircraft("Boeing 777-300ER")).toBe("b777");
+    expect(planeSlugFromAircraft("Boeing 787-9")).toBe("b787");
   });
 });
 
