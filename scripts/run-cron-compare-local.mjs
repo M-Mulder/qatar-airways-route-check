@@ -7,6 +7,7 @@
  *   node scripts/run-cron-compare-local.mjs 2026-04-15
  *
  * Requires `next dev` (or `next start`) on CRON_LOCAL_PORT (default 3000).
+ * Point DATABASE_URL at the DB you want to update (local or production Postgres via `.env.local`).
  */
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";

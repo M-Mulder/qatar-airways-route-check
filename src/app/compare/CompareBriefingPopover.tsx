@@ -160,20 +160,30 @@ export function CompareBriefingPopover({ input, badgeLabel, badgeClassName }: Pr
         <div className="ops-briefing-popover__chamfer ops-briefing-popover__chamfer--in">
           <div className="ops-briefing-popover__sheen" aria-hidden />
           <p className="ops-briefing-popover__kicker">Summary</p>
-          <h3 className="ops-briefing-popover__title" style={{ color: primaryTintVar[briefing.primaryTint] }}>
+          <h3
+            className={
+              briefing.titleStyle === "technical"
+                ? "ops-briefing-popover__title ops-briefing-popover__title--technical"
+                : "ops-briefing-popover__title"
+            }
+            style={{ color: primaryTintVar[briefing.primaryTint] }}
+          >
             {briefing.primaryTitle}
           </h3>
 
           <div className="ops-briefing-popover__block" data-stagger="1">
-            <p className="ops-briefing-popover__label">Qsuite (airline · this aircraft)</p>
+            <p className="ops-briefing-popover__label">Qsuite</p>
             <dl className="ops-briefing-popover__grid">
-              <dt>Airline</dt>
-              <dd>{briefing.qsuite.apiLabel}</dd>
-              <dt>Aircraft list</dt>
+              <dt>Schedule</dt>
+              <dd>{briefing.qsuite.scheduleQsuiteText}</dd>
+              <dt>Tail list</dt>
               <dd>
-                {briefing.qsuite.tailLabel}
+                {briefing.qsuite.tailQsuiteText}
                 {briefing.qsuite.registration ? (
-                  <span className="ops-briefing-popover__reg"> {briefing.qsuite.registration}</span>
+                  <>
+                    {" "}
+                    <span className="ops-briefing-popover__reg">({briefing.qsuite.registration})</span>
+                  </>
                 ) : null}
               </dd>
             </dl>
@@ -185,12 +195,21 @@ export function CompareBriefingPopover({ input, badgeLabel, badgeClassName }: Pr
             style={{ borderLeftColor: equipAccent }}
           >
             <p className="ops-briefing-popover__label">Aircraft type</p>
-            <p className="ops-briefing-popover__body">{briefing.equipment.body}</p>
+            <dl className="ops-briefing-popover__grid">
+              <dt>Schedule</dt>
+              <dd>{briefing.equipment.plannedShort}</dd>
+              <dt>Live</dt>
+              <dd>{briefing.equipment.liveShort}</dd>
+              <dt>Result</dt>
+              <dd>{briefing.equipment.verdictShort}</dd>
+            </dl>
           </div>
 
-          <p className="ops-briefing-popover__foot" data-stagger="3">
-            {briefing.footnote}
-          </p>
+          {briefing.footnote ? (
+            <p className="ops-briefing-popover__foot" data-stagger="3">
+              {briefing.footnote}
+            </p>
+          ) : null}
         </div>
       </div>
     ) : null;

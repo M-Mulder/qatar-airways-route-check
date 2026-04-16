@@ -6,7 +6,7 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (sto
 
 ## Features
 
-- **Vercel Cron** (once per day on Hobby) → `GET /api/cron/compare` (secured with `CRON_SECRET`). Each run may fetch **Airfleets.net** once per distinct tail to store MSN, type, seats (C/Y), age, etc. for the registration hover on `/compare`.
+- **Compare job** → `GET /api/cron/compare` (secured with `CRON_SECRET`). This repo does **not** ship a Vercel Cron (Hobby’s one daily slot is easy to exhaust); run it **locally** against your Vercel Postgres when needed (see [Compare job (localhost)](#compare-job-localhost)). Each run may fetch **Airfleets.net** once per distinct tail to store MSN, type, seats (C/Y), age, etc. for the registration hover on `/compare`.
 - **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
 - **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
@@ -57,7 +57,29 @@ Matching uses **`departure_local` date (first 10 chars = YYYY-MM-DD)** as the op
 
 ## Database
 
-Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Migrations: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql), [`prisma/migrations/20260416183000_planned_segment/migration.sql`](prisma/migrations/20260416183000_planned_segment/migration.sql), [`prisma/migrations/20260417120000_daily_compare_equipment/migration.sql`](prisma/migrations/20260417120000_daily_compare_equipment/migration.sql) (`actualEquipment`, `matchEquipment` on `DailyCompare`), [`prisma/migrations/20260418180000_airfleets_payload/migration.sql`](prisma/migrations/20260418180000_airfleets_payload/migration.sql) (`airfleetsPayload` JSON on `DailyCompare` for registration hover). If `migrate deploy` is blocked, apply SQL manually (e.g. `npm run db:apply-compare-equipment-migration` / `npm run db:apply-airfleets-migration`), then **`npm run db:generate`** and re-run cron.
+Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Migrations: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql), [`prisma/migrations/20260416183000_planned_segment/migration.sql`](prisma/migrations/20260416183000_planned_segment/migration.sql), [`prisma/migrations/20260417120000_daily_compare_equipment/migration.sql`](prisma/migrations/20260417120000_daily_compare_equipment/migration.sql) (`actualEquipment`, `matchEquipment` on `DailyCompare`), [`prisma/migrations/20260418180000_airfleets_payload/migration.sql`](prisma/migrations/20260418180000_airfleets_payload/migration.sql) (`airfleetsPayload` JSON on `DailyCompare` for registration hover). If `migrate deploy` is blocked, apply SQL manually (e.g. `npm run db:apply-compare-equipment-migration` / `npm run db:apply-airfleets-migration`), then **`npm run db:generate`** and run the compare job again.
+
+### Production error: column `airfleetsPayload` does not exist
+
+The app code expects every migration to be applied on **each** database (local and Vercel Postgres). If production throws `The column DailyCompare.airfleetsPayload does not exist`, run migrations **once** against the **production** connection string (from the Vercel dashboard → Storage / env → `DATABASE_URL`):
+
+```bash
+# Preferred: apply any pending migrations (from project root)
+DATABASE_URL="postgresql://…" npm run db:migrate
+```
+
+If that fails with **P3005** or similar, apply only the Airfleets SQL, then regenerate the client if needed:
+
+```bash
+DATABASE_URL="postgresql://…" npm run db:apply-airfleets-migration
+npm run db:generate
+```
+
+On Windows PowerShell, set the variable for one command: `$env:DATABASE_URL="postgresql://…"; npm run db:migrate`
+
+`scripts/load-db-env.mjs` applies **`.env.local` last** and overwrites earlier values, so a shell `DATABASE_URL=…` can be ignored if `.env.local` also defines it. For a one-off production migration, either put the production URL in `.env.local` temporarily (do not commit) or rename `.env.local` for that command.
+
+Redeploying the app does **not** add columns by itself; the database must be migrated.
 
 ```bash
 npm run db:migrate
@@ -71,7 +93,7 @@ The Prisma client is generated under **`.prisma-client`** at the repo root (see 
 
 ## Deploy (Vercel)
 
-The [`vercel`](https://vercel.com/docs/cli) CLI is a **devDependency**. This repo is a normal Next.js app; [`vercel.json`](vercel.json) defines the **Cron** schedule.
+The [`vercel`](https://vercel.com/docs/cli) CLI is a **devDependency**. This repo is a normal Next.js app (no `vercel.json` cron: compare runs are triggered from your machine—see below).
 
 1. **Login and link** (once per machine): `npx vercel login` then `npx vercel link` in the project root (creates a local `.vercel/` folder, gitignored).
 2. **Push environment variables** from your merged `.env` + `.env.local` into Vercel (production; add `--preview` for Preview too):
@@ -90,15 +112,16 @@ The **build** runs `next build` only (`postinstall` already runs `prisma generat
 
 > **`npx plugins add vercel/vercel-plugin`** is a different tool (editor plugins). Use **`npx vercel`** / **`npm run vercel:deploy`** for deployment.
 
-## Cron (Vercel)
+## Compare job (localhost)
 
-[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`0 4 * * *`** (04:00 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
+Vercel **Hobby** allows only **one** cron invocation per day for the whole project; this repo does not register a Vercel Cron (if you had one before, remove it under **Project → Settings → Cron Jobs** so it does not consume your quota). Run the same endpoint **locally** while `DATABASE_URL` in `.env.local` points at **Vercel Postgres** (copy the value from the Vercel project settings—never commit it).
 
-That UTC time is **06:00 in Amsterdam** during **CEST** (daylight saving, roughly late March–late October). In **CET** (winter) the same cron runs at **05:00** local—Vercel has no timezone-aware cron, so pick the season you care about or accept the one-hour shift.
+1. Start the app: `npm run dev`
+2. In another terminal: `npm run cron:local`
 
-Ensure **Cron Jobs** are enabled on the project and `CRON_SECRET` is set in Production.
+That script calls `GET http://127.0.0.1:3000/api/cron/compare` with `Authorization: Bearer <CRON_SECRET>` (loaded from `.env` / `.env.local`). Optional: `npm run cron:local 2026-04-15` for a single-day backfill. Override the base URL with `CRON_LOCAL_BASE` if you use another port.
 
-Manual run:
+To hit **production** over HTTPS instead (uses your deployment URL and production `CRON_SECRET`):
 
 ```bash
 curl -sS -H "Authorization: Bearer $CRON_SECRET" "https://<your-deployment>/api/cron/compare"
@@ -158,7 +181,7 @@ Use SSH remote if you prefer: `git@github.com:M-Mulder/qatar-airways-route-check
 
 ## Publishing planned data
 
-Generate CSV locally (same columns as [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py)), then run **`npm run db:seed-planned -- <path-to.csv>`** against each environment’s `DATABASE_URL` (local, Vercel Postgres, etc.). Cron and the dashboard read only from **`PlannedSegment`**.
+Generate CSV locally (same columns as [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py)), then run **`npm run db:seed-planned -- <path-to.csv>`** against each environment’s `DATABASE_URL` (local, Vercel Postgres, etc.). The compare job and the dashboard read only from **`PlannedSegment`**.
 
 ## Learn more
 

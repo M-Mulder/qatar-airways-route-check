@@ -79,11 +79,12 @@ describe("compareHoverExplanation", () => {
       matchEquipment: true,
       actualRegistration: "A7-ALK",
     });
-    expect(t).toContain("Qsuite: aligned");
-    expect(t).toContain("airline No");
+    expect(t).toContain("Qsuite aligned");
+    expect(t).toContain("Not marked as Qsuite");
     expect(t).toContain("A7-ALK");
-    expect(t).toContain("Aircraft type: matches");
-    expect(t).toContain("Status shows Aligned when Qsuite");
+    expect(t).toContain("Same family as schedule");
+    expect(t).toContain("Schedule vs live: aligned");
+    expect(t).not.toContain("Status shows Aligned");
   });
 
   it("explains Qsuite mismatch and can still note equipment", () => {
@@ -97,10 +98,10 @@ describe("compareHoverExplanation", () => {
       matchEquipment: true,
       actualRegistration: "A7-XYZ",
     });
-    expect(t).toContain("Qsuite: not aligned");
-    expect(t).toContain("airline Yes");
-    expect(t).toContain("No");
-    expect(t).toContain("Aircraft type: matches");
+    expect(t).toContain("Qsuite not aligned");
+    expect(t).toContain("Marked as Qsuite");
+    expect(t).toContain("Not in Qsuite tail list");
+    expect(t).toContain("Same family as schedule");
   });
 
   it("flags equipment family mismatch when Qsuite matches", () => {
@@ -114,8 +115,8 @@ describe("compareHoverExplanation", () => {
       matchEquipment: false,
       actualRegistration: "A7-TEST",
     });
-    expect(t).toContain("Qsuite: aligned");
-    expect(t).toContain("Aircraft type: differs");
+    expect(t).toContain("Qsuite aligned");
+    expect(t).toContain("Differs from schedule");
     expect(t).toContain("B77W");
   });
 });
@@ -133,9 +134,26 @@ describe("buildCompareBriefing", () => {
       actualRegistration: "A7-ALK",
     });
     expect(b.qsuite.kind).toBe("match");
-    expect(b.primaryTitle).toBe("Schedule and live data agree");
-    expect(b.qsuite.apiLabel).toBe("No");
+    expect(b.primaryTitle).toBe("Schedule vs live: aligned");
+    expect(b.qsuite.scheduleQsuiteText).toBe("Not marked as Qsuite");
+    expect(b.qsuite.tailQsuiteText).toBe("Not in Qsuite tail list");
     expect(b.equipment.aligned).toBe(true);
-    expect(b.footnote).toContain("Status shows Aligned when Qsuite");
+    expect(b.footnote).toBe("");
+    expect(b.titleStyle).toBe("technical");
+  });
+
+  it("uses display title style for legacy rows without stored equipment match", () => {
+    const b = buildCompareBriefing({
+      plannedEquipment: "A350-900",
+      actualEquipment: null,
+      plannedQsuiteApi: false,
+      actualQsuiteFromTail: false,
+      actualAircraftCell: "A359",
+      matchQsuite: true,
+      matchEquipment: null,
+      actualRegistration: "A7-ALK",
+    });
+    expect(b.titleStyle).toBe("display");
+    expect(b.footnote.length).toBeGreaterThan(10);
   });
 });

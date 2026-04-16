@@ -18,9 +18,16 @@ export function overallCompareMatch(r: CompareExplainInput): boolean | null {
   return r.matchQsuite === true && r.matchEquipment === true ? true : false;
 }
 
-function yn(v: boolean | null | undefined): string {
-  if (v === null || v === undefined) return "unknown";
-  return v ? "Yes" : "No";
+/** Schedule row: what the airline API says about Qsuite for this segment. */
+function scheduleQsuitePhrase(v: boolean | null | undefined): string {
+  if (v === null || v === undefined) return "—";
+  return v ? "Marked as Qsuite" : "Not marked as Qsuite";
+}
+
+/** Tail row: Qatar Qsuite tail registry (not a cabin guarantee). */
+function tailQsuitePhrase(v: boolean | null | undefined): string {
+  if (v === null || v === undefined) return "Unknown";
+  return v ? "In Qsuite tail list" : "Not in Qsuite tail list";
 }
 
 function equipmentVerdict(
@@ -61,19 +68,28 @@ function truncate(s: string, max: number): string {
 export type CompareBriefingQsuite = {
   kind: "match" | "mismatch" | "inconclusive";
   headline: string;
-  apiLabel: string;
-  tailLabel: string;
+  /** Human-readable schedule-side Qsuite flag. */
+  scheduleQsuiteText: string;
+  /** Human-readable tail-list Qsuite line (registration shown separately in UI when known). */
+  tailQsuiteText: string;
   registration: string | null;
 };
 
 export type CompareBriefingEquipment = {
   aligned: boolean | null;
-  body: string;
+  /** Schedule equipment string or "—". */
+  plannedShort: string;
+  /** Parsed live type or raw FR24 cell snippet or "—". */
+  liveShort: string;
+  /** One short outcome line for scanning. */
+  verdictShort: string;
 };
 
 export type CompareBriefing = {
   /** Hero line (overall plan vs FR24 when both stored; else Qsuite headline). */
   primaryTitle: string;
+  /** `technical` = mono uppercase for schedule-vs-live; `display` = legacy Qsuite-only headline. */
+  titleStyle: "technical" | "display";
   primaryTint: "mint" | "rose" | "amber" | "cyan" | "muted";
   qsuite: CompareBriefingQsuite;
   equipment: CompareBriefingEquipment;
@@ -93,41 +109,48 @@ export function buildCompareBriefing(r: CompareExplainInput): CompareBriefing {
       ? {
           kind: "match",
           headline: "Qsuite matches",
-          apiLabel: yn(api),
-          tailLabel: yn(tail),
+          scheduleQsuiteText: scheduleQsuitePhrase(api),
+          tailQsuiteText: tailQsuitePhrase(tail),
           registration: reg,
         }
       : r.matchQsuite === false
         ? {
             kind: "mismatch",
             headline: "Qsuite does not match",
-            apiLabel: yn(api),
-            tailLabel: yn(tail),
+            scheduleQsuiteText: scheduleQsuitePhrase(api),
+            tailQsuiteText: tailQsuitePhrase(tail),
             registration: reg,
           }
         : {
             kind: "inconclusive",
             headline: "Qsuite unclear",
-            apiLabel: yn(api),
-            tailLabel: yn(tail),
+            scheduleQsuiteText: scheduleQsuitePhrase(api),
+            tailQsuiteText: tailQsuitePhrase(tail),
             registration: reg,
           };
 
   const ev = equipmentVerdict(r.plannedEquipment, r.actualAircraftCell);
   const equipAligned = r.matchEquipment ?? ev.aligned;
-  let equipBody = ev.line;
-  if (r.actualEquipment?.trim()) {
-    equipBody = `Live aircraft (from tracking): ${r.actualEquipment.trim()}. ${ev.line}`;
-  }
+  const plannedShort = (r.plannedEquipment ?? "").trim() || "—";
+  const liveSaved = (r.actualEquipment ?? "").trim();
+  const liveCell = truncate((r.actualAircraftCell ?? "").replace(/\s+/g, " ").trim(), 44);
+  const liveShort = liveSaved || liveCell || "—";
+
+  let verdictShort: string;
+  if (r.matchEquipment === true) verdictShort = "Same family as schedule";
+  else if (r.matchEquipment === false) verdictShort = "Differs from schedule";
+  else if (ev.aligned === true) verdictShort = "Same family as schedule";
+  else if (ev.aligned === false) verdictShort = "Differs from schedule";
+  else verdictShort = "Unclear";
 
   let primaryTitle: string;
   let primaryTint: CompareBriefing["primaryTint"];
   if (!legacy && overall !== null) {
     if (overall) {
-      primaryTitle = "Schedule and live data agree";
+      primaryTitle = "Schedule vs live: aligned";
       primaryTint = "mint";
     } else {
-      primaryTitle = "Schedule and live data differ";
+      primaryTitle = "Schedule vs live: not aligned";
       primaryTint = "rose";
     }
   } else {
@@ -138,13 +161,22 @@ export function buildCompareBriefing(r: CompareExplainInput): CompareBriefing {
 
   const footnote = legacy
     ? "Run the check again after updating—aircraft type from live tracking is not stored on this row yet, so the badge only reflects Qsuite."
-    : "Status shows Aligned when Qsuite from the airline matches the aircraft list and the aircraft family matches between your schedule and live tracking.";
+    : "";
+
+  const titleStyle: CompareBriefing["titleStyle"] =
+    !legacy && overall !== null ? "technical" : "display";
 
   return {
     primaryTitle,
+    titleStyle,
     primaryTint,
     qsuite,
-    equipment: { aligned: equipAligned, body: equipBody },
+    equipment: {
+      aligned: equipAligned,
+      plannedShort,
+      liveShort,
+      verdictShort,
+    },
     footnote,
   };
 }
@@ -154,14 +186,14 @@ export function buildCompareBriefing(r: CompareExplainInput): CompareBriefing {
  */
 export function compareHoverExplanation(r: CompareExplainInput): string {
   const b = buildCompareBriefing(r);
-  const reg = b.qsuite.registration ? ` ${b.qsuite.registration}` : "";
+  const regPart = b.qsuite.registration ? ` Registration ${b.qsuite.registration}.` : "";
   const q =
     b.qsuite.kind === "match"
-      ? `Qsuite: aligned — airline ${b.qsuite.apiLabel}; this aircraft${reg} (${b.qsuite.tailLabel}).`
+      ? `Qsuite aligned.${regPart} Schedule: ${b.qsuite.scheduleQsuiteText}. Tail list: ${b.qsuite.tailQsuiteText}.`
       : b.qsuite.kind === "mismatch"
-        ? `Qsuite: not aligned — airline ${b.qsuite.apiLabel} vs this aircraft${reg} (${b.qsuite.tailLabel}).`
-        : `Qsuite: unclear (airline ${b.qsuite.apiLabel}, this aircraft ${b.qsuite.tailLabel}).`;
-  const equip =
-    r.matchEquipment === null ? "" : ` Aircraft type (saved): ${r.matchEquipment ? "aligned" : "not aligned"}.`;
-  return `${b.primaryTitle}. ${q}${equip} ${b.equipment.body} ${b.footnote}`;
+        ? `Qsuite not aligned.${regPart} Schedule: ${b.qsuite.scheduleQsuiteText}. Tail list: ${b.qsuite.tailQsuiteText}.`
+        : `Qsuite unclear.${regPart} Schedule: ${b.qsuite.scheduleQsuiteText}. Tail list: ${b.qsuite.tailQsuiteText}.`;
+  const equip = ` Aircraft: schedule ${b.equipment.plannedShort}, live ${b.equipment.liveShort}. ${b.equipment.verdictShort}.`;
+  const foot = b.footnote ? ` ${b.footnote}` : "";
+  return `${b.primaryTitle}. ${q}${equip}${foot}`.replace(/\s+/g, " ").trim();
 }
