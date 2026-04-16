@@ -17,7 +17,7 @@ function unauthorized() {
  * e.g. 04:00 UTC ≈ 06:00 Europe/Amsterdam during CEST).
  * - No `?date=`: compare **yesterday, today, and tomorrow** (Europe/Amsterdam), intersected with dates
  *   **on or after** the earliest planned departure in Postgres for configured segments (avoids empty runs
- *   before your export starts). FR24 is fetched once per flight for the whole batch.
+ *   before your export starts). Live comparison data is fetched once per flight for the whole batch.
  * - `?date=YYYY-MM-DD`: single-day run (manual backfill).
  */
 export async function GET(req: Request) {

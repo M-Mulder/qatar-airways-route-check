@@ -101,7 +101,7 @@ async function fetchHtmlStep(
       cache: "no-store",
     });
     const next = mergeCookieHeader(cookie, cookieHeaderFromResponse(res));
-    if (!res.ok) throw new Error(`Airfleets HTTP ${res.status}`);
+    if (!res.ok) throw new Error(`Aircraft site HTTP ${res.status}`);
     const html = await res.text();
     return { html, cookie: next };
   } finally {
@@ -237,7 +237,7 @@ export async function fetchAirfleetsHttp(registration: string): Promise<Airfleet
   const fetchedAt = new Date().toISOString();
   const reg = registration.toUpperCase().trim();
   if (!reg || reg.length < 4) {
-    return { fetchedAt, error: "Missing or too-short registration for Airfleets lookup." };
+    return { fetchedAt, error: "Missing or too-short registration for aircraft lookup." };
   }
 
   const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
@@ -261,7 +261,7 @@ export async function fetchAirfleetsHttp(registration: string): Promise<Airfleet
 
     const detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
     if (!detailUrl) {
-      return { fetchedAt, searchUrl, error: "No matching aircraft row on Airfleets search." };
+      return { fetchedAt, searchUrl, error: "No matching aircraft row in the search results." };
     }
 
     const planeStep = await fetchHtmlStep(detailUrl, searchUrl, cookie);
@@ -349,7 +349,7 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
 /** User-facing error line (also stored in JSON). */
 export function formatAirfleetsErrorForStorage(raw: string): string {
   if (/\b403\b|forbidden/i.test(raw)) {
-    return "Airfleets returned HTTP 403 (plain HTTP is blocked by captcha/Cloudflare). Ensure browser mode is enabled (default), or open the search link in a desktop browser.";
+    return "HTTP 403: the aircraft data source blocked this request. Enable automated fetch on your host or open the search link in a desktop browser.";
   }
   return raw;
 }

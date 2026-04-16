@@ -37,24 +37,24 @@ function equipmentVerdict(
   const p = (planned ?? "").trim();
   const c = (cell ?? "").trim();
   if (!p && !c)
-    return { line: "Aircraft type: nothing on your schedule and nothing readable from live tracking.", aligned: null };
-  if (!p) return { line: `Aircraft type: missing on your schedule; live page shows “${truncate(c, 48)}”.`, aligned: null };
-  if (!c) return { line: `Aircraft type: your schedule says ${p}; live tracking did not show a usable aircraft line.`, aligned: null };
+    return { line: "Aircraft type: nothing on your schedule and nothing readable from the comparison.", aligned: null };
+  if (!p) return { line: `Aircraft type: missing on your schedule; recorded data shows “${truncate(c, 48)}”.`, aligned: null };
+  if (!c) return { line: `Aircraft type: your schedule says ${p}; no usable aircraft line was available for that flight.`, aligned: null };
 
   const pc = equipmentCategory(p);
   const cc = equipmentCategory(c);
   if (pc && cc) {
     if (pc === cc) return { line: `Aircraft type: matches your schedule (${pc}).`, aligned: true };
     return {
-      line: `Aircraft type: differs — schedule ${p} (${pc}) vs live “${truncate(c, 40)}” (${cc}).`,
+      line: `Aircraft type: differs — schedule ${p} (${pc}) vs operated “${truncate(c, 40)}” (${cc}).`,
       aligned: false,
     };
   }
 
   const loose = c.toUpperCase().includes(p.toUpperCase()) || p.toUpperCase().includes(c.toUpperCase().slice(0, 6));
-  if (loose) return { line: `Aircraft type: likely matches (schedule ${p}; live “${truncate(c, 40)}”).`, aligned: true };
+  if (loose) return { line: `Aircraft type: likely matches (schedule ${p}; operated “${truncate(c, 40)}”).`, aligned: true };
   return {
-    line: `Aircraft type: unclear — schedule ${p} vs live “${truncate(c, 40)}”.`,
+    line: `Aircraft type: unclear — schedule ${p} vs operated “${truncate(c, 40)}”.`,
     aligned: null,
   };
 }
@@ -79,16 +79,16 @@ export type CompareBriefingEquipment = {
   aligned: boolean | null;
   /** Schedule equipment string or "—". */
   plannedShort: string;
-  /** Parsed live type or raw FR24 cell snippet or "—". */
+  /** Parsed live type or raw comparison cell snippet or "—". */
   liveShort: string;
   /** One short outcome line for scanning. */
   verdictShort: string;
 };
 
 export type CompareBriefing = {
-  /** Hero line (overall plan vs FR24 when both stored; else Qsuite headline). */
+  /** Hero line (overall plan vs operated when both stored; else Qsuite headline). */
   primaryTitle: string;
-  /** `technical` = mono uppercase for schedule-vs-live; `display` = legacy Qsuite-only headline. */
+  /** `technical` = mono uppercase for schedule-vs-operated; `display` = legacy Qsuite-only headline. */
   titleStyle: "technical" | "display";
   primaryTint: "mint" | "rose" | "amber" | "cyan" | "muted";
   qsuite: CompareBriefingQsuite;
@@ -147,10 +147,10 @@ export function buildCompareBriefing(r: CompareExplainInput): CompareBriefing {
   let primaryTint: CompareBriefing["primaryTint"];
   if (!legacy && overall !== null) {
     if (overall) {
-      primaryTitle = "Schedule vs live: aligned";
+      primaryTitle = "Schedule vs operated: aligned";
       primaryTint = "mint";
     } else {
-      primaryTitle = "Schedule vs live: not aligned";
+      primaryTitle = "Schedule vs operated: not aligned";
       primaryTint = "rose";
     }
   } else {
@@ -160,7 +160,7 @@ export function buildCompareBriefing(r: CompareExplainInput): CompareBriefing {
   }
 
   const footnote = legacy
-    ? "Run the check again after updating—aircraft type from live tracking is not stored on this row yet, so the badge only reflects Qsuite."
+    ? "Run the check again after updating—operated aircraft type is not stored on this row yet, so the badge only reflects Qsuite."
     : "";
 
   const titleStyle: CompareBriefing["titleStyle"] =
@@ -193,7 +193,7 @@ export function compareHoverExplanation(r: CompareExplainInput): string {
       : b.qsuite.kind === "mismatch"
         ? `Qsuite not aligned.${regPart} Schedule: ${b.qsuite.scheduleQsuiteText}. Tail list: ${b.qsuite.tailQsuiteText}.`
         : `Qsuite unclear.${regPart} Schedule: ${b.qsuite.scheduleQsuiteText}. Tail list: ${b.qsuite.tailQsuiteText}.`;
-  const equip = ` Aircraft: schedule ${b.equipment.plannedShort}, live ${b.equipment.liveShort}. ${b.equipment.verdictShort}.`;
+  const equip = ` Aircraft: schedule ${b.equipment.plannedShort}, operated ${b.equipment.liveShort}. ${b.equipment.verdictShort}.`;
   const foot = b.footnote ? ` ${b.footnote}` : "";
   return `${b.primaryTitle}. ${q}${equip}${foot}`.replace(/\s+/g, " ").trim();
 }

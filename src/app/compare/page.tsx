@@ -66,7 +66,7 @@ export default async function ComparePage() {
     <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
       <div className="ops-reveal">
         <h1 className="ops-display text-3xl text-[var(--ops-fg)] md:text-4xl">
-          Schedule and live tracking
+          Schedule and operations
         </h1>
       </div>
 
@@ -80,9 +80,9 @@ export default async function ComparePage() {
       <section className="ops-reveal ops-reveal-d1 space-y-4">
         <h2 className="ops-display text-xl text-[var(--ops-fg)]">Saved checks</h2>
         <p className="text-sm text-[var(--ops-subtle)]">
-          Results when your schedule was compared to live flight data (Flightradar24). Hover a{" "}
-          <span className="text-[var(--ops-muted)]">registration</span> for Airfleets aircraft details when the
-          compare job has stored them.
+          Results when your published schedule was compared to what operated. Hover a{" "}
+          <span className="text-[var(--ops-muted)]">registration</span> for stored aircraft facts when the daily
+          check has saved them.
         </p>
         {dbError ? (
           <div className="ops-alert ops-alert-warn">
@@ -93,14 +93,13 @@ export default async function ComparePage() {
             <p className="text-sm text-[var(--ops-muted)]">No saved checks yet.</p>
             {!plannedError && plannedRows.length > 0 ? (
               <p className="text-xs leading-relaxed text-[var(--ops-subtle)]">
-                A row appears here only when the daily job finds that flight on{" "}
-                <span className="text-[var(--ops-muted)]">Flightradar24</span> for that date and route{" "}
-                <em>and</em> we can confirm both{" "}
-                <span className="text-[var(--ops-muted)]">Qsuite</span> (airline data vs the aircraft
-                registration) and{" "}
-                <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs the live
-                tracking page). If live data is missing, blocked, or the aircraft text does not match your
-                schedule, nothing is saved here—your imported schedule below still comes from the database.
+                A row appears here only when the daily job can match that flight for the date and route{" "}
+                <em>and</em> confirm both{" "}
+                <span className="text-[var(--ops-muted)]">Qsuite</span> (airline data vs the aircraft registration)
+                and{" "}
+                <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs what operated).
+                If comparison data is missing, blocked, or the aircraft line does not match your schedule, nothing
+                is saved here—your imported schedule below still comes from the database.
               </p>
             ) : null}
           </div>
@@ -113,12 +112,12 @@ export default async function ComparePage() {
                   <th>Route</th>
                   <th>Flight</th>
                   <th>Scheduled aircraft</th>
-                  <th>Live aircraft</th>
+                  <th>Operated aircraft</th>
                   <th>Qsuite (airline)</th>
                   <th>Registration</th>
                   <th>Qsuite (aircraft)</th>
                   <th>Status</th>
-                  <th>Track</th>
+                  <th>Link</th>
                   <th>Details</th>
                 </tr>
               </thead>
@@ -176,7 +175,7 @@ export default async function ComparePage() {
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Live page ↗
+                          Open flight ↗
                         </a>
                       </td>
                       <td

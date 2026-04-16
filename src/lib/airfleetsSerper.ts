@@ -39,14 +39,14 @@ async function serperScrapePage(targetUrl: string): Promise<SerperScrapeJson> {
     try {
       json = JSON.parse(raw) as SerperScrapeJson;
     } catch {
-      throw new Error(`Serper scrape: non-JSON response (HTTP ${res.status}).`);
+      throw new Error(`Scrape API returned non-JSON (HTTP ${res.status}).`);
     }
     if (!res.ok) {
       throw new Error(
-        json.error || `Serper scrape HTTP ${res.status}: ${norm(raw).slice(0, 200)}`,
+        json.error || `Scrape API HTTP ${res.status}: ${norm(raw).slice(0, 200)}`,
       );
     }
-    if (json.error) throw new Error(`Serper scrape: ${json.error}`);
+    if (json.error) throw new Error(`Scrape API: ${json.error}`);
     return json;
   } finally {
     clearTimeout(t);
@@ -162,7 +162,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
   const fetchedAt = new Date().toISOString();
   const reg = registration.toUpperCase().trim();
   if (!reg || reg.length < 4) {
-    return { fetchedAt, error: "Missing or too-short registration for Airfleets lookup." };
+    return { fetchedAt, error: "Missing or too-short registration for aircraft lookup." };
   }
   if (!serperConfigured()) {
     return { fetchedAt, error: "SERPER_API_KEY is not set." };
@@ -178,7 +178,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
       return {
         fetchedAt,
         searchUrl,
-        error: "No matching aircraft row in Serper Airfleets search text (layout or blocking).",
+        error: "No matching aircraft row in search text (layout or blocking).",
       };
     }
 
@@ -187,7 +187,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
       return {
         fetchedAt,
         searchUrl,
-        error: `Could not map aircraft “${row.aircraftFamily}” to an Airfleets plane URL slug.`,
+        error: `Could not map aircraft “${row.aircraftFamily}” to a plane page URL slug.`,
       };
     }
 
@@ -201,7 +201,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
         detailUrl,
         airline: row.airline,
         lineStatus: row.lineStatus,
-        error: `Serper plane page text does not mention ${reg} (wrong slug or blocked page).`,
+        error: `Aircraft detail text does not mention ${reg} (wrong slug or blocked page).`,
       };
     }
 

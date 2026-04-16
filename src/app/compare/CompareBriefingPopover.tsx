@@ -198,7 +198,7 @@ export function CompareBriefingPopover({ input, badgeLabel, badgeClassName }: Pr
             <dl className="ops-briefing-popover__grid">
               <dt>Schedule</dt>
               <dd>{briefing.equipment.plannedShort}</dd>
-              <dt>Live</dt>
+              <dt>Operated</dt>
               <dd>{briefing.equipment.liveShort}</dd>
               <dt>Result</dt>
               <dd>{briefing.equipment.verdictShort}</dd>

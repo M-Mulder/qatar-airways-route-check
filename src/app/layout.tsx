@@ -26,7 +26,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Qatar Airways route-check",
-  description: "Compare your Qatar Airways schedule with live flight tracking and Qsuite info.",
+  description: "Compare your Qatar Airways schedule with what operated and Qsuite info.",
 };
 
 export const viewport: Viewport = {

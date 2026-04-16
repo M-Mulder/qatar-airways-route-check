@@ -34,7 +34,7 @@ export type MultiCompareJobResult = {
 };
 
 /**
- * Load planned rows once, scrape FR24 once per distinct flight.
+ * Load planned rows once, fetch live comparison HTML once per distinct flight.
  * Upserts DailyCompare only when Qsuite and equipment family compares are both decisive (Match/Mismatch each).
  * Deletes any existing row when either dimension is inconclusive (N/A).
  */
@@ -58,13 +58,13 @@ export async function runCompareForDates(
     const key = reg.toUpperCase().trim();
     let hit = airfleetsCache.get(key);
     if (!hit) {
-      // Visible in Vercel function logs (Airfleets only runs for rows that pass Qsuite+equipment gates).
-      console.info(`[compare] Airfleets fetch start registration=${key}`);
+      // Visible in Vercel function logs (aircraft payload only runs for rows that pass Qsuite+equipment gates).
+      console.info(`[compare] Aircraft payload fetch start registration=${key}`);
       hit = await fetchAirfleetsForRegistration(key);
       airfleetsCache.set(key, hit);
       const err = typeof hit.error === "string" ? hit.error : "";
       console.info(
-        `[compare] Airfleets fetch done registration=${key} ok=${!err} ${err ? `error=${err.slice(0, 400)}` : ""}`,
+        `[compare] Aircraft payload fetch done registration=${key} ok=${!err} ${err ? `error=${err.slice(0, 400)}` : ""}`,
       );
     }
     return hit as unknown as Prisma.InputJsonValue;
@@ -76,7 +76,7 @@ export async function runCompareForDates(
       fr24Cache.set(flight, parseFr24FlightHistoryHtml(html));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`${flight} FR24: ${msg}`);
+      errors.push(`${flight}: ${msg}`);
       fr24Cache.set(flight, []);
     }
   }
@@ -113,10 +113,10 @@ export async function runCompareForDates(
 
       let fr24Error: string | null = null;
       if (!fr) {
-        const fetchFail = errors.find((e) => e.startsWith(`${seg.flight} FR24`));
+        const fetchFail = errors.find((e) => e.startsWith(`${seg.flight}: `));
         if (fetchFail) fr24Error = fetchFail;
-        else if (fr24Rows.length === 0) fr24Error = "Could not read any flights from the live tracking page.";
-        else fr24Error = "No flight listed for this date and route on the live tracking page.";
+        else if (fr24Rows.length === 0) fr24Error = "Could not read any flights for this flight from the comparison source.";
+        else fr24Error = "No flight listed for this date and route in the available data.";
       }
 
       const mq = matchQsuite(plannedQsuiteApi, actualQsuiteFromTail);

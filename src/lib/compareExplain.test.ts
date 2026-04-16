@@ -3,7 +3,7 @@ import { buildCompareBriefing, compareHoverExplanation, overallCompareMatch } fr
 import { equipmentCategory, matchPlannedVsFr24Equipment } from "./equipmentCompare";
 
 describe("equipmentCategory", () => {
-  it("maps planned-style labels and FR24 snippets", () => {
+  it("maps planned-style labels and live equipment snippets", () => {
     expect(equipmentCategory("A350-900")).toBe("A350-900");
     expect(equipmentCategory("A359")).toBe("A350-900");
     expect(equipmentCategory("359")).toBe("A350-900");
@@ -83,7 +83,7 @@ describe("compareHoverExplanation", () => {
     expect(t).toContain("Not marked as Qsuite");
     expect(t).toContain("A7-ALK");
     expect(t).toContain("Same family as schedule");
-    expect(t).toContain("Schedule vs live: aligned");
+    expect(t).toContain("Schedule vs operated: aligned");
     expect(t).not.toContain("Status shows Aligned");
   });
 
@@ -134,7 +134,7 @@ describe("buildCompareBriefing", () => {
       actualRegistration: "A7-ALK",
     });
     expect(b.qsuite.kind).toBe("match");
-    expect(b.primaryTitle).toBe("Schedule vs live: aligned");
+    expect(b.primaryTitle).toBe("Schedule vs operated: aligned");
     expect(b.qsuite.scheduleQsuiteText).toBe("Not marked as Qsuite");
     expect(b.qsuite.tailQsuiteText).toBe("Not in Qsuite tail list");
     expect(b.equipment.aligned).toBe(true);

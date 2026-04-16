@@ -148,7 +148,7 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
     return (
       <span
         className="ops-table-mono text-[var(--ops-cyan)]"
-        title="Aircraft details from Airfleets appear here after the compare job stores them for this tail."
+        title="Aircraft details appear here after the daily check stores them for this tail."
       >
         {registration}
       </span>
@@ -162,7 +162,7 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
         id={regionId}
         role="region"
         aria-live="polite"
-        aria-label="Airfleets aircraft details"
+        aria-label="Aircraft details"
         className="ops-briefing-popover pointer-events-auto fixed z-[9998] max-w-[min(24rem,calc(100vw-1.5rem))]"
         style={{
           top: anchor.top + anchor.height + 10,
@@ -174,7 +174,7 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
       >
         <div className="ops-briefing-popover__chamfer ops-briefing-popover__chamfer--in">
           <div className="ops-briefing-popover__sheen" aria-hidden />
-          <p className="ops-briefing-popover__kicker">Airfleets.net</p>
+          <p className="ops-briefing-popover__kicker">Aircraft</p>
           <h3 className="ops-briefing-popover__title" style={{ color: "var(--ops-cyan)" }}>
             {registration}
           </h3>
@@ -190,10 +190,10 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open Airfleets search in browser ↗
+                    Open search in browser ↗
                   </a>
                   <span className="block pt-1 text-[var(--ops-subtle)]">
-                    Captcha/Cloudflare block simple HTTP; run compare locally (`npm run cron:local`) so Airfleets loads in Chromium, or open the link above.
+                    If lookup failed, retry after the next scheduled check or open the link above in your browser.
                   </span>
                 </p>
               ) : null}
@@ -301,7 +301,7 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
                     target="_blank"
                     rel="noreferrer"
                   >
-                    Open Airfleets page ↗
+                    Open aircraft page ↗
                   </a>
                 </p>
               ) : null}

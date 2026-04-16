@@ -549,7 +549,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     const html = await page.content();
     if (html.length < 500 && reloads >= 2) {
       throw new Error(
-        "Airfleets returned an empty or stub HTML document to the browser (common for serverless/datacenter egress). Configure GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID for programmable search, or run Airfleets from a non-Vercel environment with normal browser egress.",
+        "The aircraft site returned an empty document (common for serverless/datacenter egress). Configure GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID, SERPER_API_KEY, or run the job from an environment with normal browser egress.",
       );
     }
     if (parseAirfleetsSearchForDetailUrl(html, reg, searchUrl)) {
@@ -662,7 +662,7 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
   const fetchedAt = new Date().toISOString();
   const reg = registration.toUpperCase().trim();
   if (!reg || reg.length < 4) {
-    return { fetchedAt, error: "Missing or too-short registration for Airfleets lookup." };
+    return { fetchedAt, error: "Missing or too-short registration for aircraft lookup." };
   }
 
   const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
@@ -702,7 +702,7 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
         afLog(reg, "search_parse_no_detail_url", {
           ...(await snapshotSearchPage(page, searchHtml, reg, searchUrl)),
         });
-        return { fetchedAt, searchUrl, error: "No matching aircraft row on Airfleets search." };
+        return { fetchedAt, searchUrl, error: "No matching aircraft row in the search results." };
       }
       afLog(reg, "search_detail_url", { detailUrl });
 
@@ -753,6 +753,6 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
   return {
     fetchedAt,
     searchUrl,
-    error: formatAirfleetsErrorForStorage("Airfleets browser closed repeatedly; give up after retry."),
+    error: formatAirfleetsErrorForStorage("Browser closed repeatedly while fetching aircraft data; give up after retry."),
   };
 }
