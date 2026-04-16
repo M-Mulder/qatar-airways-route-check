@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// One row per calendar day (operational departure in local sense) + flight + route leg.
+model DailyCompare {
+  id                     String   @id @default(cuid())
+  compareDate            DateTime @db.Date
+  flight                 String
+  routeKey               String
+  plannedEquipment       String?
+  plannedQsuiteApi       Boolean?
+  plannedQueryDate       String?
+  plannedDepartureLocal  String?
+  actualRegistration     String?
+  actualAircraftCell     String?
+  actualQsuiteFromTail   Boolean?
+  matchQsuite            Boolean?
+  fr24Error              String?
+  source                 String   @default("fr24")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  @@unique([compareDate, flight, routeKey])
+  @@index([compareDate])
+}
