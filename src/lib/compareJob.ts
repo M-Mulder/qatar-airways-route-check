@@ -64,7 +64,7 @@ export async function runCompareForDates(
       airfleetsCache.set(key, hit);
       const err = typeof hit.error === "string" ? hit.error : "";
       console.info(
-        `[compare] Airfleets fetch done registration=${key} ok=${!err} ${err ? `error=${err.slice(0, 120)}` : ""}`,
+        `[compare] Airfleets fetch done registration=${key} ok=${!err} ${err ? `error=${err.slice(0, 400)}` : ""}`,
       );
     }
     return hit as unknown as Prisma.InputJsonValue;

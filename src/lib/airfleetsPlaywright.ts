@@ -5,7 +5,7 @@ import {
   parseAirfleetsPlanePage,
   parseAirfleetsSearchForDetailUrl,
 } from "@/lib/airfleets";
-import type { Browser, BrowserContext, Page } from "playwright-core";
+import type { Browser, BrowserContext, ConsoleMessage, Page } from "playwright-core";
 import { chromium } from "playwright-core";
 
 const BASE = "https://www.airfleets.net";
@@ -16,6 +16,34 @@ function isVercel(): boolean {
   return process.env.VERCEL === "1" || process.env.VERCEL === "true";
 }
 
+/** Extra `[Airfleets]` lines in function logs (Vercel on by default; set `AIRFLEETS_VERBOSE_LOG=0` to mute). */
+function airfleetsVerboseLogs(): boolean {
+  const v = (process.env.AIRFLEETS_VERBOSE_LOG ?? "").trim().toLowerCase();
+  if (v === "0" || v === "false") return false;
+  if (v === "1" || v === "true") return true;
+  return isVercel();
+}
+
+function trunc(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}…[${s.length} chars]`;
+}
+
+function afLog(reg: string | undefined, event: string, fields: Record<string, unknown> = {}): void {
+  if (!airfleetsVerboseLogs()) return;
+  const safe: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(fields)) {
+    if (typeof val === "string") safe[k] = trunc(val.replace(/\s+/g, " ").trim(), 500);
+    else safe[k] = val;
+  }
+  const line = JSON.stringify({ reg: reg ?? null, event, ...safe });
+  console.info(`[Airfleets] ${line}`);
+}
+
+function isBrowserOrTargetClosedMessage(msg: string): boolean {
+  return /has been closed|Target closed|Browser has been closed|browser.*closed/i.test(msg);
+}
+
 /** One browser for the whole compare job; fresh context per tail. */
 let sharedBrowser: Browser | null = null;
 
@@ -23,12 +51,31 @@ function norm(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
 }
 
-async function getSharedBrowser(): Promise<Browser> {
-  if (sharedBrowser) return sharedBrowser;
+function resetSharedBrowserIfDead(reg?: string): void {
+  if (!sharedBrowser) return;
+  try {
+    if (!sharedBrowser.isConnected()) {
+      afLog(reg, "shared_browser_not_connected_reset");
+      sharedBrowser = null;
+    }
+  } catch {
+    afLog(reg, "shared_browser_reset_after_error");
+    sharedBrowser = null;
+  }
+}
 
+async function getSharedBrowser(reg?: string): Promise<Browser> {
+  resetSharedBrowserIfDead(reg);
+  if (sharedBrowser) {
+    afLog(reg, "browser_reuse", { connected: sharedBrowser.isConnected() });
+    return sharedBrowser;
+  }
+
+  const t0 = Date.now();
   if (isVercel()) {
     const Chromium = (await import("@sparticuz/chromium")).default;
     const exe = await Chromium.executablePath();
+    afLog(reg, "browser_launch_start", { executablePath: exe });
     // playwright-core’s bundled protocol targets Chromium ~147 (see playwright-core/browsers.json). Using an
     // older @sparticuz/chromium (e.g. 131) causes immediate disconnect: "Target page, context or browser has been closed".
     // Match major with Playwright’s Chromium, per https://www.npmjs.com/package/@sparticuz/chromium (Playwright section).
@@ -38,6 +85,7 @@ async function getSharedBrowser(): Promise<Browser> {
       headless: true,
       chromiumSandbox: false,
     });
+    afLog(reg, "browser_launch_ok", { ms: Date.now() - t0, version: safeBrowserVersion(sharedBrowser) });
     return sharedBrowser;
   }
 
@@ -49,6 +97,7 @@ async function getSharedBrowser(): Promise<Browser> {
       : "chrome";
 
   const exe = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+  afLog(reg, "browser_launch_start", { channel: exe ? "executablePath" : channel });
   if (exe) {
     sharedBrowser = await chromium.launch({
       headless: !headed,
@@ -70,11 +119,132 @@ async function getSharedBrowser(): Promise<Browser> {
       ],
     });
   }
+  afLog(reg, "browser_launch_ok", { ms: Date.now() - t0, version: safeBrowserVersion(sharedBrowser) });
   return sharedBrowser;
 }
 
-async function newAirfleetsContext(): Promise<BrowserContext> {
-  const browser = await getSharedBrowser();
+function safeBrowserVersion(browser: Browser): string {
+  try {
+    return browser.version();
+  } catch {
+    return "?";
+  }
+}
+
+function safePageUrl(page: Page): string {
+  try {
+    return page.url();
+  } catch {
+    return "<unreadable>";
+  }
+}
+
+function attachPageDebugListeners(page: Page, reg: string): () => void {
+  if (!airfleetsVerboseLogs()) return () => {};
+
+  const onConsole = (msg: ConsoleMessage) => {
+    try {
+      afLog(reg, "page_console", { type: msg.type(), text: msg.text() });
+    } catch {
+      /* ignore */
+    }
+  };
+  const onPageError = (err: Error) => {
+    afLog(reg, "page_error", { message: err.message, stack: err.stack ?? "" });
+  };
+  const onCrash = () => {
+    afLog(reg, "page_crash", {});
+  };
+
+  page.on("console", onConsole);
+  page.on("pageerror", onPageError);
+  page.on("crash", onCrash);
+  return () => {
+    page.off("console", onConsole);
+    page.off("pageerror", onPageError);
+    page.off("crash", onCrash);
+  };
+}
+
+async function snapshotSearchPage(page: Page, html: string, reg: string, searchUrl: string): Promise<Record<string, unknown>> {
+  const url = safePageUrl(page);
+  const hasPlaneLink = !!parseAirfleetsSearchForDetailUrl(html, reg, searchUrl);
+  const lower = html.slice(0, 8000).toLowerCase();
+  const keywordHits = ["captcha", "cloudflare", "turnstile", "challenge", "access denied", "403", "forbidden"].filter(
+    (k) => lower.includes(k),
+  );
+  let robotCount = -1;
+  let cfCount = -1;
+  let tabRowCount = -1;
+  try {
+    robotCount = await page
+      .locator('form[action*="turnstile2"] input[type="submit"], input[type="submit"]')
+      .filter({ hasText: /not a robot|robot/i })
+      .count();
+  } catch {
+    /* page may be closing */
+  }
+  try {
+    cfCount = await page
+      .locator(
+        "#challenge-running, .cf-browser-verification, #challenge-stage, iframe[src*='challenges.cloudflare']",
+      )
+      .count();
+  } catch {
+    /* ignore */
+  }
+  try {
+    tabRowCount = await page.locator('tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]').count();
+  } catch {
+    /* ignore */
+  }
+  let title = "";
+  try {
+    title = await page.title();
+  } catch {
+    /* ignore */
+  }
+  return {
+    url,
+    htmlLen: html.length,
+    hasPlaneLink,
+    tabRowCount,
+    robotCount,
+    cfCount,
+    keywordHits: keywordHits.join(","),
+    title: trunc(title, 120),
+  };
+}
+
+async function snapshotPlanePage(page: Page, html: string, detailUrl: string): Promise<Record<string, unknown>> {
+  const url = safePageUrl(page);
+  const parsed = parseAirfleetsPlanePage(html, detailUrl);
+  const hasAny = !!(parsed.msn || parsed.type || parsed.aircraftFamily || parsed.seatConfigRaw);
+  const lower = html.slice(0, 6000).toLowerCase();
+  const keywordHits = ["captcha", "cloudflare", "turnstile", "challenge"].filter((k) => lower.includes(k));
+  let robotCount = -1;
+  try {
+    robotCount = await page
+      .locator('form[action*="turnstile2"] input[type="submit"], input[type="submit"]')
+      .filter({ hasText: /not a robot|robot/i })
+      .count();
+  } catch {
+    /* ignore */
+  }
+  return {
+    url,
+    htmlLen: html.length,
+    hasParsedFields: hasAny,
+    msn: parsed.msn ?? "",
+    type: parsed.type ?? "",
+    robotCount,
+    keywordHits: keywordHits.join(","),
+  };
+}
+
+async function newAirfleetsContext(reg: string): Promise<BrowserContext> {
+  const browser = await getSharedBrowser(reg);
+  afLog(reg, "context_new", { browserConnected: browser.isConnected() });
   const context = await browser.newContext({
     userAgent:
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
@@ -102,21 +272,33 @@ export async function closeAirfleetsPlaywright(): Promise<void> {
 }
 
 async function settleSearchPage(page: Page, searchUrl: string, registration: string): Promise<void> {
+  const reg = registration.toUpperCase().trim();
+  afLog(reg, "search_goto", { searchUrl });
   await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  afLog(reg, "search_goto_done", { url: safePageUrl(page) });
   await sleep(2500);
 
-  const reg = registration.toUpperCase().trim();
   const deadline = Date.now() + 120_000;
   let reloads = 0;
+  let lastProgressLog = Date.now();
 
   while (Date.now() < deadline) {
     const html = await page.content();
-    if (parseAirfleetsSearchForDetailUrl(html, reg, searchUrl)) return;
+    if (parseAirfleetsSearchForDetailUrl(html, reg, searchUrl)) {
+      afLog(reg, "search_settled_ok", await snapshotSearchPage(page, html, reg, searchUrl));
+      return;
+    }
+
+    if (airfleetsVerboseLogs() && Date.now() - lastProgressLog >= 20_000) {
+      lastProgressLog = Date.now();
+      afLog(reg, "search_still_waiting", { reloads, ...(await snapshotSearchPage(page, html, reg, searchUrl)) });
+    }
 
     const robot = page
       .locator('form[action*="turnstile2"] input[type="submit"], input[type="submit"]')
       .filter({ hasText: /not a robot|robot/i });
     if ((await robot.count()) > 0) {
+      afLog(reg, "search_robot_button_click", {});
       await robot.first().click();
       await sleep(12_000);
       continue;
@@ -124,6 +306,7 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
 
     const url = page.url().toLowerCase();
     if (url.includes("captcha")) {
+      afLog(reg, "search_url_has_captcha_reload", { url: page.url() });
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
       await sleep(3000);
       continue;
@@ -132,13 +315,16 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     const cf = page.locator(
       "#challenge-running, .cf-browser-verification, #challenge-stage, iframe[src*='challenges.cloudflare']",
     );
-    if ((await cf.count()) > 0) {
+    const cfN = await cf.count();
+    if (cfN > 0) {
+      afLog(reg, "search_cloudflare_like_wait", { cfN });
       await sleep(4000);
       continue;
     }
 
     reloads += 1;
     if (reloads % 5 === 0) {
+      afLog(reg, "search_periodic_reload", { reloads });
       await page.goto(searchUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
       await sleep(2000);
     } else {
@@ -146,28 +332,41 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     }
   }
 
-  const last = await page.content();
+  const last = await page.content().catch(() => "");
+  const snap = last ? await snapshotSearchPage(page, last, reg, searchUrl) : { note: "page.content failed" };
+  afLog(reg, "search_timeout_final", snap);
   if (!parseAirfleetsSearchForDetailUrl(last, reg, searchUrl)) {
     throw new Error("Airfleets search did not return a plane link within 120s (captcha or layout change).");
   }
 }
 
-async function settlePlanePage(page: Page, detailUrl: string): Promise<string> {
+async function settlePlanePage(page: Page, detailUrl: string, reg: string): Promise<string> {
+  afLog(reg, "plane_goto", { detailUrl });
   await page.goto(detailUrl, { waitUntil: "domcontentloaded", timeout: 120_000 });
+  afLog(reg, "plane_goto_done", { url: safePageUrl(page) });
   await sleep(2000);
 
   const deadline = Date.now() + 90_000;
+  let lastPlaneLog = Date.now();
+
   while (Date.now() < deadline) {
     const html = await page.content();
     const parsed = parseAirfleetsPlanePage(html, detailUrl);
     if (parsed.msn || parsed.type || parsed.aircraftFamily || parsed.seatConfigRaw) {
+      afLog(reg, "plane_settled_ok", await snapshotPlanePage(page, html, detailUrl));
       return html;
+    }
+
+    if (airfleetsVerboseLogs() && Date.now() - lastPlaneLog >= 20_000) {
+      lastPlaneLog = Date.now();
+      afLog(reg, "plane_still_waiting", await snapshotPlanePage(page, html, detailUrl));
     }
 
     const robot = page
       .locator('form[action*="turnstile2"] input[type="submit"], input[type="submit"]')
       .filter({ hasText: /not a robot|robot/i });
     if ((await robot.count()) > 0) {
+      afLog(reg, "plane_robot_button_click", {});
       await robot.first().click();
       await sleep(12_000);
       continue;
@@ -176,7 +375,9 @@ async function settlePlanePage(page: Page, detailUrl: string): Promise<string> {
     await sleep(2500);
   }
 
-  return await page.content();
+  const html = await page.content();
+  afLog(reg, "plane_timeout_fallback_html", await snapshotPlanePage(page, html, detailUrl));
+  return html;
 }
 
 /**
@@ -192,47 +393,77 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
 
   const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
 
-  const context = await newAirfleetsContext();
-  const page = await context.newPage();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let context: BrowserContext | null = null;
+    let page: Page | null = null;
+    let detachListeners: (() => void) | undefined;
 
-  try {
-    await settleSearchPage(page, searchUrl, reg);
-    const searchHtml = await page.content();
+    try {
+      resetSharedBrowserIfDead(reg);
+      context = await newAirfleetsContext(reg);
+      page = await context.newPage();
+      detachListeners = attachPageDebugListeners(page, reg);
+      afLog(reg, "page_open", { attempt });
 
-    const detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
-    if (!detailUrl) {
-      return { fetchedAt, searchUrl, error: "No matching aircraft row on Airfleets search." };
-    }
+      await settleSearchPage(page, searchUrl, reg);
+      const searchHtml = await page.content();
 
-    const planeHtml = await settlePlanePage(page, detailUrl);
-    const parsed = parseAirfleetsPlanePage(planeHtml, detailUrl);
-
-    let airline: string | null = null;
-    let lineStatus: string | null = null;
-    const $s = cheerio.load(searchHtml);
-    $s('tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]').each((_, tr) => {
-      const $tr = $s(tr);
-      if (!norm($tr.text()).toUpperCase().includes(reg)) return;
-      const tds = $tr.find("> td").toArray();
-      if (tds.length >= 5) {
-        airline = norm($s(tds[3]).text()) || null;
-        lineStatus = norm($s(tds[4]).text()) || null;
+      const detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
+      if (!detailUrl) {
+        afLog(reg, "search_parse_no_detail_url", {
+          ...(await snapshotSearchPage(page, searchHtml, reg, searchUrl)),
+        });
+        return { fetchedAt, searchUrl, error: "No matching aircraft row on Airfleets search." };
       }
-    });
+      afLog(reg, "search_detail_url", { detailUrl });
 
-    return {
-      fetchedAt,
-      searchUrl,
-      detailUrl,
-      airline,
-      lineStatus,
-      ...parsed,
-    };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { fetchedAt, searchUrl, error: formatAirfleetsErrorForStorage(msg) };
-  } finally {
-    await page.close().catch(() => {});
-    await context.close().catch(() => {});
+      const planeHtml = await settlePlanePage(page, detailUrl, reg);
+      const parsed = parseAirfleetsPlanePage(planeHtml, detailUrl);
+
+      let airline: string | null = null;
+      let lineStatus: string | null = null;
+      const $s = cheerio.load(searchHtml);
+      $s('tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]').each((_, tr) => {
+        const $tr = $s(tr);
+        if (!norm($tr.text()).toUpperCase().includes(reg)) return;
+        const tds = $tr.find("> td").toArray();
+        if (tds.length >= 5) {
+          airline = norm($s(tds[3]).text()) || null;
+          lineStatus = norm($s(tds[4]).text()) || null;
+        }
+      });
+
+      afLog(reg, "fetch_ok", { detailUrl, hasMsn: !!parsed.msn });
+      return {
+        fetchedAt,
+        searchUrl,
+        detailUrl,
+        airline,
+        lineStatus,
+        ...parsed,
+      };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const stack = e instanceof Error ? e.stack : undefined;
+      afLog(reg, "fetch_caught", { attempt, message: msg, stack: stack ? trunc(stack, 800) : "" });
+
+      if (attempt === 0 && isBrowserOrTargetClosedMessage(msg)) {
+        afLog(reg, "fetch_will_retry_after_closed_browser", { attempt });
+        await closeAirfleetsPlaywright();
+        continue;
+      }
+
+      return { fetchedAt, searchUrl, error: formatAirfleetsErrorForStorage(msg) };
+    } finally {
+      detachListeners?.();
+      await page?.close().catch(() => {});
+      await context?.close().catch(() => {});
+    }
   }
+
+  return {
+    fetchedAt,
+    searchUrl,
+    error: formatAirfleetsErrorForStorage("Airfleets browser closed repeatedly; give up after retry."),
+  };
 }
