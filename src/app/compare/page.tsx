@@ -66,7 +66,7 @@ export default async function ComparePage() {
     <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
       <div className="ops-reveal">
         <h1 className="ops-display text-3xl text-[var(--ops-fg)] md:text-4xl">
-          Schedule and operations
+          Your booking vs what flew
         </h1>
       </div>
 

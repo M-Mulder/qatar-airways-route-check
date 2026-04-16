@@ -25,8 +25,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Qatar Airways route-check",
-  description: "Compare your Qatar Airways schedule with what operated and Qsuite info.",
+  title: "Qatar'ed",
+  description:
+    "Compare your Qatar Airways booking with what actually flew—Qsuite, aircraft type, and the last-minute swap problem.",
 };
 
 export const viewport: Viewport = {
@@ -50,7 +51,8 @@ export default function RootLayout({
               className="ops-display truncate text-xl text-[var(--ops-fg)] md:text-2xl"
               style={{ textShadow: "0 0 40px rgba(94, 234, 212, 0.08)" }}
             >
-              Qatar <span className="text-[var(--ops-cyan)]">route</span>-check
+              <span className="text-[var(--ops-cyan)]">Qatar</span>
+              <span className="text-[var(--ops-fg)]">&apos;ed</span>
             </Link>
           </div>
         </header>
