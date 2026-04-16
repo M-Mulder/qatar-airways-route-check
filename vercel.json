@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/compare",
-      "schedule": "34 19 * * *"
+      "schedule": "35 17 * * *"
     }
   ]
 }
