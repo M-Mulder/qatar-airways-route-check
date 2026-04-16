@@ -5,7 +5,7 @@ import {
   parseAirfleetsPlanePage,
   parseAirfleetsSearchForDetailUrl,
 } from "@/lib/airfleets";
-import type { Browser, BrowserContext, ConsoleMessage, Page, Response } from "playwright-core";
+import type { Browser, BrowserContext, ConsoleMessage, Locator, Page, Response } from "playwright-core";
 import { chromium } from "playwright-core";
 
 const BASE = "https://www.airfleets.net";
@@ -23,6 +23,16 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function isVercel(): boolean {
   return process.env.VERCEL === "1" || process.env.VERCEL === "true";
+}
+
+/**
+ * When `AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY=1`, open Google for **`{reg} Airfleets`** and click the first airfleets.net hit
+ * (mimics a normal user). **Default off**: Google often shows captcha / consent on datacenter IPs; scraping Google also
+ * conflicts with their terms—use only where acceptable. Similar *idea* to [web-agent-master/google-search](https://github.com/web-agent-master/google-search) (Playwright SERP), but we keep a tiny inline flow, not that package.
+ */
+function useGoogleEntryForAirfleets(): boolean {
+  const v = (process.env.AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY ?? "").trim().toLowerCase();
+  return v === "1" || v === "true";
 }
 
 /** Extra `[Airfleets]` lines in function logs (Vercel on by default; set `AIRFLEETS_VERBOSE_LOG=0` to mute). */
@@ -370,6 +380,88 @@ async function tryClickDesktopVersionIfPresent(page: Page, reg: string): Promise
   await sleep(MS_AFTER_NAV);
 }
 
+async function dismissGoogleConsentIfPresent(page: Page, reg: string): Promise<void> {
+  const tryClick = async (loc: Locator): Promise<boolean> => {
+    const first = loc.first();
+    if (await first.isVisible({ timeout: 1200 }).catch(() => false)) {
+      await first.click({ timeout: 5000 }).catch(() => {});
+      afLog(reg, "google_consent_dismiss_attempt", {});
+      await sleep(MS_AFTER_NAV);
+      return true;
+    }
+    return false;
+  };
+  await tryClick(page.locator("#L2AGLb"));
+  await tryClick(page.locator('[aria-label="Accept all"]'));
+  await tryClick(page.getByRole("button", { name: /^(Accept all|I agree|Agree|Alle akzeptieren|Tout accepter)$/i }));
+}
+
+/**
+ * @returns `plane` if we ended on an Airfleets `ficheapp/plane-…` URL (ready for plane parse); `failed` otherwise.
+ */
+async function tryEnterAirfleetsViaGoogle(page: Page, reg: string): Promise<"plane" | "failed"> {
+  if (!useGoogleEntryForAirfleets()) return "failed";
+
+  const q = `${reg} Airfleets`;
+  const gUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en`;
+  afLog(reg, "google_entry_goto", { url: trunc(gUrl, 240) });
+  try {
+    await page.goto(gUrl, { waitUntil: "load", timeout: 25_000 });
+  } catch (e) {
+    afLog(reg, "google_entry_goto_error", { message: e instanceof Error ? e.message : String(e) });
+    return "failed";
+  }
+
+  await dismissGoogleConsentIfPresent(page, reg);
+  await sleep(MS_AFTER_NAV);
+
+  const u0 = safePageUrl(page).toLowerCase();
+  if (u0.includes("google.com/sorry") || u0.includes("/interstitial")) {
+    afLog(reg, "google_entry_sorry_or_interstitial", { url: trunc(u0, 200) });
+    return "failed";
+  }
+
+  const linkGroups = [
+    () => page.locator('div#search a[href*="airfleets.net/ficheapp/plane-"]'),
+    () => page.locator('div#rso a[href*="airfleets.net/ficheapp/plane-"]'),
+    () => page.locator('a[href*="airfleets.net/ficheapp/plane-"]'),
+    () => page.locator('div#search a[href*="airfleets.net"]'),
+    () => page.locator("main a[href*='airfleets.net']"),
+  ];
+
+  for (const mk of linkGroups) {
+    const loc = mk().first();
+    const vis = await loc.isVisible({ timeout: 2500 }).catch(() => false);
+    if (!vis) continue;
+    afLog(reg, "google_entry_click_airfleets", {});
+    try {
+      await Promise.all([
+        page.waitForURL(/airfleets\.net/i, { timeout: 22_000 }),
+        loc.click({ timeout: 8000 }),
+      ]);
+    } catch {
+      try {
+        await loc.click({ timeout: 8000 });
+        await page.waitForURL(/airfleets\.net/i, { timeout: 22_000 });
+      } catch {
+        continue;
+      }
+    }
+    await page.waitForLoadState("load", { timeout: 20_000 }).catch(() => {});
+    await sleep(MS_AFTER_NAV);
+    const finalU = safePageUrl(page).toLowerCase();
+    if (finalU.includes("ficheapp/plane-")) {
+      afLog(reg, "google_entry_landed_plane", { url: trunc(finalU, 200) });
+      return "plane";
+    }
+    afLog(reg, "google_entry_landed_non_plane", { url: trunc(finalU, 200) });
+    return "failed";
+  }
+
+  afLog(reg, "google_entry_no_airfleets_link", {});
+  return "failed";
+}
+
 function attachAirfleetsResponseLogger(page: Page, reg: string): () => void {
   if (!airfleetsVerboseLogs()) return () => {};
 
@@ -540,10 +632,20 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
       };
       afLog(reg, "page_open", { attempt });
 
-      await settleSearchPage(page, searchUrl, reg);
-      const searchHtml = await page.content();
+      let searchHtml: string;
+      let detailUrl: string | null = null;
 
-      const detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
+      const viaGoogle = await tryEnterAirfleetsViaGoogle(page, reg);
+      if (viaGoogle === "plane") {
+        detailUrl = safePageUrl(page).split("#")[0]!;
+        searchHtml = await page.content();
+        afLog(reg, "fetch_skip_airfleets_search_via_google_plane", { detailUrl: trunc(detailUrl, 160) });
+      } else {
+        await settleSearchPage(page, searchUrl, reg);
+        searchHtml = await page.content();
+        detailUrl = parseAirfleetsSearchForDetailUrl(searchHtml, reg, searchUrl);
+      }
+
       if (!detailUrl) {
         afLog(reg, "search_parse_no_detail_url", {
           ...(await snapshotSearchPage(page, searchHtml, reg, searchUrl)),

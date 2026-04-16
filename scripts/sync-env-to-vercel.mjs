@@ -18,7 +18,14 @@ import { loadDbEnv } from "./load-db-env.mjs";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 loadDbEnv(root);
 
-const KEYS = ["DATABASE_URL", "CRON_SECRET", "COMPARE_FLIGHTS", "GOOGLE_CSE_API_KEY", "GOOGLE_CSE_ID"];
+const KEYS = [
+  "DATABASE_URL",
+  "CRON_SECRET",
+  "COMPARE_FLIGHTS",
+  "GOOGLE_CSE_API_KEY",
+  "GOOGLE_CSE_ID",
+  "AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY",
+];
 const withPreview = process.argv.includes("--preview");
 const targets = withPreview ? ["production", "preview"] : ["production"];
 

@@ -41,6 +41,7 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 | `COMPARE_FLIGHTS` | Optional; comma-separated subset of `QR274,QR284,QR934` |
 | `GOOGLE_CSE_API_KEY` | Optional; [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview) key. When set with **`GOOGLE_CSE_ID`**, each tail lookup tries **Google’s indexed** Airfleets `ficheapp` snippet first (same facts as the SERP preview), then falls back to Playwright if needed. |
 | `GOOGLE_CSE_ID` | Programmable Search Engine **cx** value (engine must be allowed to return `airfleets.net` results). |
+| `AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY` | Optional `1` / `true`: before Airfleets, Playwright runs a **Google** search for **`{registration} Airfleets`** and clicks the first `airfleets.net` link; if it lands on a **`ficheapp/plane-`** page, the Airfleets search step is skipped. **Off by default** (Google often blocks or CAPTCHAs serverless IPs; automated use of Google may conflict with their terms). Similar motivation to open-source tools like [web-agent-master/google-search](https://github.com/web-agent-master/google-search), but we do not bundle that project. |
 
 ## Planned segments (database)
 
