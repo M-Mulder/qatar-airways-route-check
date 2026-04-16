@@ -581,6 +581,21 @@ body::after {
   color: rgba(230, 237, 245, 0.88);
 }
 
+/* Compact variant (e.g. Qsuite Q hover hint). */
+.ops-briefing-popover__chamfer--compact {
+  padding: 0.5rem 0.7rem 0.55rem;
+  max-width: 16rem;
+}
+
+.ops-briefing-popover__chamfer--compact .ops-briefing-popover__kicker {
+  margin-bottom: 0.28rem;
+}
+
+.ops-briefing-popover__chamfer--compact .ops-briefing-popover__body {
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
 .ops-briefing-popover__foot {
   position: relative;
   z-index: 1;
