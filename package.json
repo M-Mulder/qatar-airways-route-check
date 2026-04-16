@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma migrate deploy && next build",
     "start": "next start",
     "lint": "eslint",
     "postinstall": "node scripts/prisma-generate-safe.mjs",
@@ -18,7 +18,10 @@
     "db:clear-compares": "node scripts/db-sql.mjs scripts/clear-compares.sql",
     "db:seed-planned": "node scripts/seed-planned-segments.mjs",
     "data:add-april16-sample": "node scripts/append-april16-sample.mjs",
-    "cron:local": "node scripts/run-cron-compare-local.mjs"
+    "cron:local": "node scripts/run-cron-compare-local.mjs",
+    "vercel:sync-env": "node scripts/sync-env-to-vercel.mjs",
+    "vercel:sync-env:preview": "node scripts/sync-env-to-vercel.mjs --preview",
+    "vercel:deploy": "vercel deploy --prod"
   },
   "dependencies": {
     "@prisma/client": "5.22.0",
@@ -39,6 +42,7 @@
     "prisma": "5.22.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.4"
+    "vitest": "^4.1.4",
+    "vercel": "^41.0.0"
   }
 }

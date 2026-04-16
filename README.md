@@ -69,6 +69,27 @@ The Prisma client is generated under **`.prisma-client`** at the repo root (see 
 
 **`npm run db:generate`** runs [`scripts/prisma-generate-safe.mjs`](scripts/prisma-generate-safe.mjs): it clears `.prisma-client` (and best-effort removes legacy `node_modules/.prisma/client`) then runs `prisma generate`. If generate still fails, stop `next dev` / vitest / other Node processes, use **TypeScript: Restart TS Server**, and run `npm run db:generate` again. Fresh clones need `npm install` (postinstall runs generate).
 
+## Deploy (Vercel)
+
+The [`vercel`](https://vercel.com/docs/cli) CLI is a **devDependency**. This repo is a normal Next.js app; [`vercel.json`](vercel.json) defines the **Cron** schedule.
+
+1. **Login and link** (once per machine): `npx vercel login` then `npx vercel link` in the project root (creates a local `.vercel/` folder, gitignored).
+2. **Push environment variables** from your merged `.env` + `.env.local` into Vercel (production; add `--preview` for Preview too):
+
+   ```bash
+   npm run vercel:sync-env
+   # optional:
+   npm run vercel:sync-env:preview
+   ```
+
+   Sets `DATABASE_URL`, `CRON_SECRET`, and `COMPARE_FLIGHTS` when present. Configure any other keys in the [Vercel dashboard](https://vercel.com/docs/projects/environment-variables) if you add them later.
+
+3. **Deploy**: `npm run vercel:deploy` (or connect the GitHub repo in the Vercel dashboard for automatic deployments).
+
+The **build** runs `prisma migrate deploy` then `next build`, so production databases pick up migrations on each deploy (ensure `DATABASE_URL` is set for the Production environment before the first deploy).
+
+> **`npx plugins add vercel/vercel-plugin`** is a different tool (editor plugins). Use **`npx vercel`** / **`npm run vercel:deploy`** for deployment.
+
 ## Cron (Vercel)
 
 [`vercel.json`](vercel.json) schedules `0 6 * * *` UTC. Ensure the **Cron** integration is enabled on your Vercel project and `CRON_SECRET` is set in project settings.
