@@ -35,15 +35,9 @@ function ScheduledAircraftCell({
   const raw = (equipment ?? "").trim();
   const text = raw ? raw.toLowerCase() : "—";
   return (
-    <span className="inline-flex flex-wrap items-baseline gap-x-1">
+    <span className="inline-flex flex-wrap items-center gap-1.5">
       <span>{text}</span>
-      {qsuiteScheduled === true ? (
-        <span className="inline-flex items-center gap-0 text-[var(--ops-subtle)]" title="Scheduled Qsuite">
-          <span>(</span>
-          <QsuiteQMark />
-          <span>)</span>
-        </span>
-      ) : null}
+      {qsuiteScheduled === true ? <QsuiteQMark title="Scheduled Qsuite" /> : null}
     </span>
   );
 }

@@ -212,18 +212,9 @@ export function PlannedExportTable({ rows }: { rows: PlannedRow[] }) {
               </td>
               <td className="ops-table-mono text-[var(--ops-fg)]">{r.departure_local}</td>
               <td className="text-[var(--ops-muted)]">
-                <span className="inline-flex flex-wrap items-baseline gap-x-1">
+                <span className="inline-flex flex-wrap items-center gap-1.5">
                   <span>{aircraftDisplayText(r)}</span>
-                  {r.qsuite_equipped === true ? (
-                    <span
-                      className="inline-flex items-center gap-0 text-[var(--ops-subtle)]"
-                      title="Scheduled Qsuite"
-                    >
-                      <span>(</span>
-                      <QsuiteQMark />
-                      <span>)</span>
-                    </span>
-                  ) : null}
+                  {r.qsuite_equipped === true ? <QsuiteQMark title="Scheduled Qsuite" /> : null}
                 </span>
               </td>
               <td className="ops-table-mono">{r.vehicle_code || "—"}</td>
