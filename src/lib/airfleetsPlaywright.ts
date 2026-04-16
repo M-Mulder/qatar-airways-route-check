@@ -5,7 +5,7 @@ import {
   parseAirfleetsPlanePage,
   parseAirfleetsSearchForDetailUrl,
 } from "@/lib/airfleets";
-import type { Browser, BrowserContext, ConsoleMessage, Page } from "playwright-core";
+import type { Browser, BrowserContext, ConsoleMessage, Page, Response } from "playwright-core";
 import { chromium } from "playwright-core";
 
 const BASE = "https://www.airfleets.net";
@@ -316,6 +316,51 @@ async function airfleetsNavigate(page: Page, reg: string, url: string, event: st
   });
 }
 
+/** Live page (see browser snapshot) exposes result rows as `tr.tabcontent` and MSN/plane links under `ficheapp/plane-`. */
+const SEARCH_RESULT_SELECTOR =
+  'a[href*="ficheapp/plane-"], tr.tabcontent, tr[class*="tabcontent"], tr[class*="Tabcontent"]';
+
+async function waitForSearchDomSignals(page: Page, reg: string, label: string): Promise<boolean> {
+  try {
+    await page.waitForSelector(SEARCH_RESULT_SELECTOR, { state: "attached", timeout: 45_000 });
+    afLog(reg, `${label}_result_dom_visible`, {});
+    return true;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    afLog(reg, `${label}_result_dom_timeout`, { message: trunc(msg, 200) });
+    return false;
+  }
+}
+
+/** Mobile shell sometimes serves a stub with a “Desktop version” link (a11y snapshot on real site). */
+async function tryClickDesktopVersionIfPresent(page: Page, reg: string): Promise<void> {
+  const link = page.getByRole("link", { name: /desktop version/i });
+  if ((await link.count()) === 0) return;
+  afLog(reg, "search_click_desktop_version_link", {});
+  await link.first().click({ timeout: 10_000 }).catch((e) => {
+    afLog(reg, "search_desktop_version_click_failed", { message: e instanceof Error ? e.message : String(e) });
+  });
+  await page.waitForLoadState("load", { timeout: 60_000 }).catch(() => {});
+  await sleep(2000);
+}
+
+function attachAirfleetsResponseLogger(page: Page, reg: string): () => void {
+  if (!airfleetsVerboseLogs()) return () => {};
+
+  const onResponse = (res: Response) => {
+    try {
+      if (res.request().resourceType() !== "document") return;
+      const u = res.url();
+      if (!u.includes("airfleets.net")) return;
+      afLog(reg, "http_document_response", { status: res.status(), url: trunc(u, 220) });
+    } catch {
+      /* ignore */
+    }
+  };
+  page.on("response", onResponse);
+  return () => page.off("response", onResponse);
+}
+
 /**
  * Hit site root first (same idea as HTTP bootstrap in airfleets.ts) so CDN/session cookies exist before search.
  * `domcontentloaded` alone often yields ~empty HTML on first paint for this stack.
@@ -326,7 +371,10 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
   await airfleetsNavigate(page, reg, home, "session_home");
   await sleep(2000);
   await airfleetsNavigate(page, reg, searchUrl, "search_goto");
-  await sleep(2500);
+  await sleep(1500);
+  await tryClickDesktopVersionIfPresent(page, reg);
+  await waitForSearchDomSignals(page, reg, "search_after_goto");
+  await sleep(1000);
 
   const deadline = Date.now() + 120_000;
   let reloads = 0;
@@ -377,10 +425,13 @@ async function settleSearchPage(page: Page, searchUrl: string, registration: str
     if (thin || reloads % 5 === 0) {
       afLog(reg, thin ? "search_reload_thin_document" : "search_periodic_reload", { reloads, htmlLen: html.length });
       if (thin) {
+        await tryClickDesktopVersionIfPresent(page, reg);
         await airfleetsNavigate(page, reg, home, "session_home_retry");
         await sleep(1500);
       }
       await airfleetsNavigate(page, reg, searchUrl, "search_reload");
+      await tryClickDesktopVersionIfPresent(page, reg);
+      await waitForSearchDomSignals(page, reg, "search_after_reload");
       await sleep(2000);
     } else {
       await sleep(2200);
@@ -455,7 +506,12 @@ export async function fetchAirfleetsWithPlaywright(registration: string): Promis
       resetSharedBrowserIfDead(reg);
       context = await newAirfleetsContext(reg);
       page = await context.newPage();
-      detachListeners = attachPageDebugListeners(page, reg);
+      const detachConsole = attachPageDebugListeners(page, reg);
+      const detachResponse = attachAirfleetsResponseLogger(page, reg);
+      detachListeners = () => {
+        detachConsole();
+        detachResponse();
+      };
       afLog(reg, "page_open", { attempt });
 
       await settleSearchPage(page, searchUrl, reg);
