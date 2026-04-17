@@ -313,6 +313,12 @@ body::after {
   border: 1px solid rgba(251, 191, 36, 0.25);
 }
 
+.ops-badge-error {
+  background: rgba(251, 113, 133, 0.12);
+  color: var(--ops-rose);
+  border: 1px solid rgba(251, 113, 133, 0.3);
+}
+
 .ops-badge-muted {
   background: rgba(122, 143, 163, 0.12);
   color: var(--ops-muted);

@@ -41,6 +41,10 @@ function label(match: boolean | null) {
   return "Unclear";
 }
 
+function isQatared(r: DailyCompare): boolean {
+  return r.plannedQsuiteApi === true && r.actualQsuiteFromTail === false;
+}
+
 function ScheduledAircraftCell({
   equipment,
   qsuiteScheduled,
@@ -172,6 +176,7 @@ export default async function ComparePage() {
                     matchEquipment: r.matchEquipment,
                     actualRegistration: r.actualRegistration,
                   });
+                  const qatared = isQatared(r);
                   return (
                     <tr key={r.id}>
                       <td className="ops-table-mono text-[var(--ops-fg)]">{r.compareDate.toISOString().slice(0, 10)}</td>
@@ -205,8 +210,8 @@ export default async function ComparePage() {
                             matchEquipment: r.matchEquipment,
                             actualRegistration: r.actualRegistration,
                           }}
-                          badgeLabel={label(overall)}
-                          badgeClassName={badge(overall)}
+                          badgeLabel={qatared ? "QATAR'ed" : label(overall)}
+                          badgeClassName={qatared ? "ops-badge ops-badge-error" : badge(overall)}
                         />
                       </td>
                       <td>
