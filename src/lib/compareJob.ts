@@ -7,6 +7,7 @@ import type { PlannedRow } from "@/lib/plannedCsv";
 import { fr24EquipmentSummary, matchPlannedVsFr24Equipment } from "@/lib/equipmentCompare";
 import { departureDateKey, pickPlannedForSegment, plannedEquipmentSummary } from "@/lib/plannedCsv";
 import { hasQsuiteTail } from "@/lib/qsuiteRegistry";
+import { amsterdamCalendarIso } from "@/lib/dates";
 
 function compareDateToPrisma(compareDateIso: string): Date {
   return new Date(`${compareDateIso}T12:00:00.000Z`);
@@ -52,6 +53,7 @@ export async function runCompareForDates(
   const fr24Cache = new Map<string, ReturnType<typeof parseFr24FlightHistoryHtml>>();
   const airfleetsCache = new Map<string, AirfleetsPayload>();
   const flightsNeeded = [...new Set(segments.map((s) => s.flight))];
+  const amsTodayIso = amsterdamCalendarIso(0);
 
   async function airfleetsForRegistration(reg: string | null): Promise<Prisma.InputJsonValue | null> {
     if (!reg?.trim()) return null;
@@ -132,7 +134,25 @@ export async function runCompareForDates(
         continue;
       }
 
-      const airfleetsPayload = await airfleetsForRegistration(actualRegistration);
+      // For past dates, avoid re-scraping aircraft payload when we already have a stored result row.
+      // This reduces credit usage while still allowing the FR24 compare to be refreshed.
+      let existingAirfleetsPayload: Prisma.JsonValue | null | undefined;
+      if (compareDateIso < amsTodayIso) {
+        const existing = await prisma.dailyCompare.findUnique({
+          where: {
+            compareDate_flight_routeKey: {
+              compareDate,
+              flight: seg.flight,
+              routeKey: seg.routeKey,
+            },
+          },
+          select: { airfleetsPayload: true },
+        });
+        existingAirfleetsPayload = existing?.airfleetsPayload;
+      }
+
+      const airfleetsPayload =
+        existingAirfleetsPayload !== undefined ? existingAirfleetsPayload : await airfleetsForRegistration(actualRegistration);
 
       await prisma.dailyCompare.upsert({
         where: {

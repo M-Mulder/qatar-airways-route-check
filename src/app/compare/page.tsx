@@ -13,6 +13,22 @@ import { RegistrationAirfleetsPopover } from "./RegistrationAirfleetsPopover";
 
 export const dynamic = "force-dynamic";
 
+function localCalendarDateIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function plannedRowOperationalDateIso(r: PlannedRow): string | null {
+  // Prefer operational departure_local date, else fallback to snapshot query_date if it looks like an ISO day.
+  const dep = (r.departure_local || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dep)) return dep;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(r.query_date)) return r.query_date;
+  return null;
+}
+
 function badge(match: boolean | null) {
   if (match === true) return "ops-badge ops-badge-ok";
   if (match === false) return "ops-badge ops-badge-warn";
@@ -47,6 +63,7 @@ export default async function ComparePage() {
 
   let plannedRows: PlannedRow[] = [];
   let plannedError: string | null = null;
+  const todayIso = localCalendarDateIso();
 
   const prisma = hasDatabaseUrl() ? getPrisma() : null;
 
@@ -73,7 +90,7 @@ export default async function ComparePage() {
     try {
       rows = await prisma.dailyCompare.findMany({
         where: { OR: [{ matchQsuite: true }, { matchQsuite: false }] },
-        orderBy: [{ compareDate: "asc" }, { flight: "asc" }, { routeKey: "asc" }],
+        orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
         take: 5000,
       });
     } catch (e) {
@@ -224,7 +241,27 @@ export default async function ComparePage() {
           <p className="text-sm text-[var(--ops-subtle)]">
             From your saved schedule. Today&apos;s departures are highlighted and scrolled into view.
           </p>
-          <PlannedExportTable rows={plannedRows} />
+          <PlannedExportTable
+            rows={plannedRows.filter((r) => {
+              const d = plannedRowOperationalDateIso(r);
+              if (!d) return true;
+              return d >= todayIso;
+            })}
+          />
+        </section>
+      ) : null}
+
+      {!plannedError && plannedRows.length > 0 ? (
+        <section id="past-flights" className="ops-reveal ops-reveal-d2 space-y-4 scroll-mt-24">
+          <h2 className="ops-display text-xl text-[var(--ops-fg)]">Past flights</h2>
+          <p className="text-sm text-[var(--ops-subtle)]">From your saved schedule (already departed).</p>
+          <PlannedExportTable
+            rows={plannedRows.filter((r) => {
+              const d = plannedRowOperationalDateIso(r);
+              if (!d) return false;
+              return d < todayIso;
+            })}
+          />
         </section>
       ) : null}
     </div>
