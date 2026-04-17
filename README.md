@@ -10,6 +10,8 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (sto
 
 Licensed under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and [SECURITY.md](SECURITY.md) for reporting issues safely. CI runs `lint`, typecheck, and tests on pushes and pull requests (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
+This project is **not affiliated with, endorsed by, or sponsored by** Qatar Airways or Flightradar24. Trademarks belong to their respective owners.
+
 ## Features
 
 - **Vercel Cron** (once per day on Hobby) → `GET /api/cron/compare` (secured with `CRON_SECRET`). Each run may fetch **Airfleets.net** once per distinct tail for the registration hover on `/compare`. With **`SERPER_API_KEY`** set, the app uses [**Serper** scrape](https://serper.dev) (`POST https://scrape.serper.dev`) to render Airfleets search + plane URLs and parse the returned plain text — **no Playwright** on that path. Without Serper, optional **Google Programmable Search** (`GOOGLE_CSE_*`) is tried first, then **`playwright-core`** + [**`@sparticuz/chromium`**](https://www.npmjs.com/package/@sparticuz/chromium) on Vercel (Chromium major must track Playwright, e.g. **147** / **1.59**), or **Chrome** locally. Set **`AIRFLEETS_BROWSER=0`** to skip Playwright and use fragile HTTP-only fetches. Cron **`maxDuration`** is **300s** in [`vercel.json`](vercel.json). In **Vercel function logs**, **`[compare] Aircraft payload fetch start`** appears only when a row is about to be saved (Qsuite and equipment must both be decisive). Playwright verbose **`[Airfleets]`** JSON lines default **on** in production; set **`AIRFLEETS_VERBOSE_LOG=0`** to mute them.
