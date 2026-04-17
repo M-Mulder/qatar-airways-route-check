@@ -33,7 +33,7 @@ function isVercel(): boolean {
  * (mimics a normal user). **Default off**: Google often shows captcha / consent on datacenter IPs; scraping Google also
  * conflicts with their terms—use only where acceptable. Similar *idea* to [web-agent-master/google-search](https://github.com/web-agent-master/google-search) (Playwright SERP), but we keep a tiny inline flow, not that package.
  */
-function useGoogleEntryForAirfleets(): boolean {
+function googleAirfleetsEntryEnabled(): boolean {
   const v = (process.env.AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY ?? "").trim().toLowerCase();
   return v === "1" || v === "true";
 }
@@ -447,7 +447,7 @@ async function dismissGoogleConsentIfPresent(page: Page, reg: string): Promise<v
  * @returns `plane` if we ended on an Airfleets `ficheapp/plane-…` URL (ready for plane parse); `failed` otherwise.
  */
 async function tryEnterAirfleetsViaGoogle(page: Page, reg: string): Promise<"plane" | "failed"> {
-  if (!useGoogleEntryForAirfleets()) return "failed";
+  if (!googleAirfleetsEntryEnabled()) return "failed";
 
   const q = `${reg} Airfleets`;
   const gUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}&hl=en`;

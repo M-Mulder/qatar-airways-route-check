@@ -1,11 +1,10 @@
 import type { DailyCompare } from "@/generated/prisma";
-// import { buildCompareAnalytics } from "@/lib/compareAnalytics";
 import { fr24FlightPath } from "@/lib/config";
 import { overallCompareMatch } from "@/lib/compareExplain";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import { type PlannedRow, plannedEquipmentDisplayFullName } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
-// import { CompareAnalyticsPanel } from "./CompareAnalyticsPanel";
+import { CompareOpsDeck } from "./CompareOpsDeck";
 import { CompareBriefingPopover } from "./CompareBriefingPopover";
 import { QsuiteQMark } from "./QsuiteQMark";
 import { PlannedExportTable } from "./PlannedExportTable";
@@ -101,9 +100,6 @@ export default async function ComparePage() {
       dbError = e instanceof Error ? e.message : String(e);
     }
   }
-
-  // Analytics panel (At a glance / bars): disabled for now — re-enable imports + line below + <CompareAnalyticsPanel />.
-  // const analytics = buildCompareAnalytics(rows);
 
   return (
     <div className="mx-auto max-w-6xl space-y-12 px-4 py-10 md:space-y-14 md:px-6 md:py-14">
@@ -235,7 +231,6 @@ export default async function ComparePage() {
                 })}
               </tbody>
             </table>
-            {/* <CompareAnalyticsPanel analytics={analytics} /> */}
           </div>
         )}
       </section>
@@ -269,6 +264,8 @@ export default async function ComparePage() {
           />
         </section>
       ) : null}
+
+      {!dbError && rows.length > 0 ? <CompareOpsDeck rows={rows} /> : null}
     </div>
   );
 }

@@ -200,7 +200,7 @@ export function parseAirfleetsPlanePage(html: string, detailUrl: string): Omit<A
     if (cells.length !== 2) return;
     const label = norm($(cells[0]).text()).toLowerCase();
     const $val = $(cells[1]);
-    let value = norm($val.text());
+    const value = norm($val.text());
     if (label.startsWith("serial number")) out.msn = value || null;
     else if (label === "type") out.type = value || null;
     else if (label.startsWith("first flight")) out.firstFlightDate = value || null;
@@ -295,7 +295,7 @@ export async function fetchAirfleetsHttp(registration: string): Promise<Airfleet
   }
 }
 
-function usePlaywrightForAirfleets(): boolean {
+function playwrightAirfleetsEnabled(): boolean {
   if (process.env.AIRFLEETS_BROWSER === "0" || process.env.AIRFLEETS_BROWSER === "false") return false;
   return true;
 }
@@ -314,7 +314,7 @@ export async function fetchAirfleetsForRegistration(registration: string): Promi
     return fetchAirfleetsWithSerper(registration);
   }
 
-  if (!usePlaywrightForAirfleets()) {
+  if (!playwrightAirfleetsEnabled()) {
     return fetchAirfleetsHttp(registration);
   }
 

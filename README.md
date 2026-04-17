@@ -6,13 +6,17 @@ Next.js app for **Vercel**: compares **planned** Qatar Airways segment data (sto
 
 > **Warning:** Scraping FR24 is fragile and may violate their terms of use. Use for personal research; prefer an official API for production.
 
+## Open source
+
+Licensed under the [MIT License](LICENSE). See [CONTRIBUTING.md](CONTRIBUTING.md) for local development and [SECURITY.md](SECURITY.md) for reporting issues safely. CI runs `lint`, typecheck, and tests on pushes and pull requests (see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
 ## Features
 
 - **Vercel Cron** (once per day on Hobby) → `GET /api/cron/compare` (secured with `CRON_SECRET`). Each run may fetch **Airfleets.net** once per distinct tail for the registration hover on `/compare`. With **`SERPER_API_KEY`** set, the app uses [**Serper** scrape](https://serper.dev) (`POST https://scrape.serper.dev`) to render Airfleets search + plane URLs and parse the returned plain text — **no Playwright** on that path. Without Serper, optional **Google Programmable Search** (`GOOGLE_CSE_*`) is tried first, then **`playwright-core`** + [**`@sparticuz/chromium`**](https://www.npmjs.com/package/@sparticuz/chromium) on Vercel (Chromium major must track Playwright, e.g. **147** / **1.59**), or **Chrome** locally. Set **`AIRFLEETS_BROWSER=0`** to skip Playwright and use fragile HTTP-only fetches. Cron **`maxDuration`** is **300s** in [`vercel.json`](vercel.json). In **Vercel function logs**, **`[compare] Aircraft payload fetch start`** appears only when a row is about to be saved (Qsuite and equipment must both be decisive). Playwright verbose **`[Airfleets]`** JSON lines default **on** in production; set **`AIRFLEETS_VERBOSE_LOG=0`** to mute them.
 - **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
 - **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
-- **`/`** redirects to **`/compare`** (dashboard: stored compares + full planned segment table from the database).
+- **`/`** redirects to **`/compare`** (dashboard: stored compares, upcoming vs past schedule tables, **Signal deck** analytics with a **Recharts** interactive Qsuite timeline per route, equipment match donut, and tail diversity / “QATAR’ed” stats).
 
 ## Setup
 
@@ -48,11 +52,11 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 
 ## Planned segments (database)
 
-Planned legs live in the **`PlannedSegment`** table (not in the repo as a CSV). Generate `qatar_segments_export.csv` with [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py) (or any file with the same headers), then load it:
+Planned legs live in the **`PlannedSegment`** table (not in the repo as a CSV). Generate a CSV with the headers below using your own exporter or tooling (the README previously referenced a sibling-folder Python script as one example), then load it:
 
 ```bash
 npm run db:migrate
-npm run db:seed-planned -- ../schiphol_equipment_scan/qatar_segments_export.csv
+npm run db:seed-planned -- ./path/to/qatar_segments_export.csv
 ```
 
 That script **replaces** all `PlannedSegment` rows with the file contents. Re-run it whenever you refresh the export.
@@ -98,9 +102,9 @@ The **build** runs `next build` only (`postinstall` already runs `prisma generat
 
 ## Cron (Vercel)
 
-[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`0 4 * * *`** (04:00 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
+[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`0 9 * * *`** (09:00 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
 
-That UTC time is **06:00 in Amsterdam** during **CEST** (daylight saving, roughly late March–late October). In **CET** (winter) the same cron runs at **05:00** local—Vercel has no timezone-aware cron, so pick the season you care about or accept the one-hour shift.
+Roughly, **09:00 UTC** is **10:00** local in Amsterdam during **CET** (winter) and **11:00** during **CEST** (summer). Vercel crons are UTC-only, so adjust expectations if you care about a fixed local wall time year-round.
 
 Ensure **Cron Jobs** are enabled on the project and `CRON_SECRET` is set in Production.
 
@@ -152,11 +156,9 @@ Loads `DATABASE_URL` from `.env` then **`.env.local`** (same as Next.js: local o
 npm run db:clear-compares
 ```
 
-### April 16 in the planned CSV (live vs placeholder)
+### Sample planned rows (demo / placeholder)
 
-Real Qatar BFF fetch (Playwright + DevTools headers) for a single day is documented in [`../schiphol_equipment_scan/FETCH_ONE_DAY.md`](../schiphol_equipment_scan/FETCH_ONE_DAY.md).
-
-If you cannot run that (missing headers / Akamai), upsert **idempotent placeholder** BFF-shaped `PlannedSegment` rows for **2026-04-16** into Postgres:
+To upsert **idempotent placeholder** `PlannedSegment` rows for **2026-04-16** (useful when you do not yet have a real CSV export):
 
 ```bash
 npm run data:add-april16-sample
@@ -170,25 +172,9 @@ npm test
 
 FR24 parser tests use [`test/fixtures/fr24-qr274-sample.html`](test/fixtures/fr24-qr274-sample.html) (no live network in CI).
 
-## GitHub remote and first push
-
-This folder is a standalone git repo (created by `create-next-app`). Link your empty GitHub repository and push:
-
-```bash
-cd qatar-airways-route-check
-git remote add origin https://github.com/M-Mulder/qatar-airways-route-check.git
-git branch -M main
-git add -A
-git status
-git commit -m "feat: Next.js route-check with planned vs FR24 compare"
-git push -u origin main
-```
-
-Use SSH remote if you prefer: `git@github.com:M-Mulder/qatar-airways-route-check.git`.
-
 ## Publishing planned data
 
-Generate CSV locally (same columns as [`qatar_segments_equipment_report.py`](../schiphol_equipment_scan/qatar_segments_equipment_report.py)), then run **`npm run db:seed-planned -- <path-to.csv>`** against each environment’s `DATABASE_URL` (local, Vercel Postgres, etc.). Cron and the dashboard read only from **`PlannedSegment`**.
+Generate a CSV with the columns documented above, then run **`npm run db:seed-planned -- <path-to.csv>`** against each environment’s `DATABASE_URL` (local, Vercel Postgres, etc.). Cron and the dashboard read only from **`PlannedSegment`**.
 
 ## Learn more
 

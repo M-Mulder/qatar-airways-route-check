@@ -2,6 +2,11 @@
   "name": "qatar-airways-route-check",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/M-Mulder/qatar-airways-route-check.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -35,7 +40,8 @@
     "next": "16.2.4",
     "playwright-core": "^1.59.1",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -102,3 +102,31 @@ export function pct(part: number, total: number): number {
   if (!total) return 0;
   return Math.round((100 * part) / total);
 }
+
+/** Per route: how often the operated tail was Qsuite-capable vs not (unknown = no tail verdict). */
+export type RouteQsuiteBarRow = {
+  routeKey: string;
+  tailQsuiteYes: number;
+  tailQsuiteNo: number;
+  tailQsuiteUnknown: number;
+  total: number;
+};
+
+export function buildRouteQsuiteBars(rows: DailyCompare[]): RouteQsuiteBarRow[] {
+  const m = new Map<string, { tailQsuiteYes: number; tailQsuiteNo: number; tailQsuiteUnknown: number }>();
+  for (const r of rows) {
+    const routeKey = (r.routeKey ?? "").trim() || "—";
+    const b = m.get(routeKey) ?? { tailQsuiteYes: 0, tailQsuiteNo: 0, tailQsuiteUnknown: 0 };
+    if (r.actualQsuiteFromTail === true) b.tailQsuiteYes += 1;
+    else if (r.actualQsuiteFromTail === false) b.tailQsuiteNo += 1;
+    else b.tailQsuiteUnknown += 1;
+    m.set(routeKey, b);
+  }
+  return [...m.entries()]
+    .map(([routeKey, v]) => ({
+      routeKey,
+      ...v,
+      total: v.tailQsuiteYes + v.tailQsuiteNo + v.tailQsuiteUnknown,
+    }))
+    .sort((a, b) => b.total - a.total || a.routeKey.localeCompare(b.routeKey));
+}
