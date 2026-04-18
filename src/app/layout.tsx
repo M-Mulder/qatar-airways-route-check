@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Image from "next/image";
 import Link from "next/link";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
@@ -28,6 +29,10 @@ export const metadata: Metadata = {
   title: "Qatar'ed",
   description:
     "Compare your Qatar Airways booking with what actually flew—Qsuite, aircraft type, and the last-minute swap problem.",
+  icons: {
+    icon: [{ url: "/qatared-logo.png", type: "image/png", sizes: "any" }],
+    apple: [{ url: "/qatared-logo.png", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -48,11 +53,23 @@ export default function RootLayout({
           <div className="mx-auto flex max-w-6xl items-center px-4 py-4 md:px-6">
             <Link
               href="/compare"
-              className="ops-display truncate text-xl text-[var(--ops-fg)] md:text-2xl"
-              style={{ textShadow: "0 0 40px rgba(94, 234, 212, 0.08)" }}
+              className="group flex min-w-0 max-w-full items-center gap-3 md:gap-3.5"
             >
-              <span className="text-[var(--ops-cyan)]">Qatar</span>
-              <span className="text-[var(--ops-fg)]">&apos;ed</span>
+              <Image
+                src="/qatared-logo.png"
+                alt="Qatar'ed — parody site logo"
+                width={44}
+                height={44}
+                className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-[var(--ops-line-strong)] shadow-[0_0_24px_rgba(94,234,212,0.12)] transition-[box-shadow,transform] group-hover:shadow-[0_0_32px_rgba(232,165,75,0.18)] md:h-11 md:w-11"
+                priority
+              />
+              <span
+                className="ops-display truncate text-xl text-[var(--ops-fg)] md:text-2xl"
+                style={{ textShadow: "0 0 40px rgba(94, 234, 212, 0.08)" }}
+              >
+                <span className="text-[var(--ops-cyan)]">Qatar</span>
+                <span className="text-[var(--ops-fg)]">&apos;ed</span>
+              </span>
             </Link>
           </div>
         </header>
