@@ -15,6 +15,8 @@ Thanks for helping improve this project.
 - `npm run lint` — ESLint.
 - `npx tsc --noEmit` — TypeScript check.
 
+If you replace **`public/qatared-logo-source.png`**, regenerate derived assets with **`npm run build:logo`** (updates `public/qatared-logo.png`, `src/app/icon.png`, and `src/app/apple-icon.png`).
+
 Keep changes focused. Do not commit `.env*`, `.vercel/`, or other secrets (see `.gitignore`).
 
 ## Legal / ethics

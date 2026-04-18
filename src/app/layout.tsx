@@ -29,9 +29,12 @@ export const metadata: Metadata = {
   title: "Qatar'ed",
   description:
     "Compare your Qatar Airways booking with what actually flew—Qsuite, aircraft type, and the last-minute swap problem.",
+  /**
+   * `src/app/icon.png` + `apple-icon.png` — Next serves `/icon.png` and `/apple-icon.png` (stable across deploys).
+   */
   icons: {
-    icon: [{ url: "/qatared-logo.png", type: "image/png", sizes: "any" }],
-    apple: [{ url: "/qatared-logo.png", type: "image/png" }],
+    icon: [{ url: "/icon.png", type: "image/png", sizes: "32x32" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png", sizes: "180x180" }],
   },
 };
 
@@ -58,9 +61,9 @@ export default function RootLayout({
               <Image
                 src="/qatared-logo.png"
                 alt="Qatar'ed — parody site logo"
-                width={44}
-                height={44}
-                className="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-[var(--ops-line-strong)] shadow-[0_0_24px_rgba(94,234,212,0.12)] transition-[box-shadow,transform] group-hover:shadow-[0_0_32px_rgba(232,165,75,0.18)] md:h-11 md:w-11"
+                width={56}
+                height={56}
+                className="h-11 w-11 shrink-0 rounded-full object-cover ring-2 ring-[var(--ops-cyan)]/35 shadow-[0_0_28px_rgba(94,234,212,0.16)] transition-[box-shadow,transform] group-hover:shadow-[0_0_36px_rgba(232,165,75,0.22)] md:h-14 md:w-14"
                 priority
               />
               <span

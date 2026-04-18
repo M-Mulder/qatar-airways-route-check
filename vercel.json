@@ -1,4 +1,18 @@
 {
+  "headers": [
+    {
+      "source": "/icon.png",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=86400, must-revalidate" }]
+    },
+    {
+      "source": "/apple-icon.png",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=86400, must-revalidate" }]
+    },
+    {
+      "source": "/qatared-logo.png",
+      "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, s-maxage=86400, must-revalidate" }]
+    }
+  ],
   "crons": [
     {
       "path": "/api/cron/compare",
