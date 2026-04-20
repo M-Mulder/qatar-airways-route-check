@@ -130,6 +130,8 @@ npm run cron:local -- 2026-04-16
 
 The script reads `CRON_SECRET` (and the rest of the env) from `.env` / `.env.local`, then calls `GET http://127.0.0.1:3000/api/cron/compare` with `Authorization: Bearer …`. Override host/port with **`CRON_LOCAL_BASE`** (e.g. `http://127.0.0.1:3001`) or **`CRON_LOCAL_PORT`**.
 
+The JSON body includes **`trackedBundlePricing`**. If **`/pricing`** stays empty after a run: open that object — **`skipped: true`** usually means **`SERPAPI_KEY`** is missing in that environment, or check **`reason`**. If **`results[].dbError`** mentions a missing table (**P2021** / `TrackedBundlePriceSnapshot`), apply the migration (`npm run db:apply-tracked-bundle-migration` or full migrate). Vercel **function logs** also print **`[pricing]`** lines (search, match, airline-direct price, DB insert). Production must have **`SERPAPI_KEY`** set for the same deployment as the cron (not only locally).
+
 If Airfleets **times out** or stays empty in headless Chromium, set in `.env.local`: **`PLAYWRIGHT_AIRFLEETS_CHANNEL=chrome`** (uses installed Google Chrome, often better with Cloudflare) and/or **`PLAYWRIGHT_AIRFLEETS_HEADED=1`** (visible browser so you can complete any manual check).
 
 **`HTTP 500` — `Unknown argument 'airfleetsPayload'`** means the Postgres column and/or the generated Prisma client are behind [`prisma/schema.prisma`](prisma/schema.prisma) (Airfleets field). Fix:

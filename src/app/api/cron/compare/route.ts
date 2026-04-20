@@ -68,11 +68,22 @@ export async function GET(req: Request) {
       trackedBundlePricing = await runTrackedBundlePriceSnapshots();
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      console.error("[pricing] runTrackedBundlePriceSnapshots threw:", message);
       trackedBundlePricing = {
         skipped: true,
         reason: message,
         results: [],
       };
+    }
+
+    if (trackedBundlePricing) {
+      const { skipped, reason, results } = trackedBundlePricing;
+      console.log("[pricing] cron summary", {
+        skipped,
+        reason: skipped ? reason : undefined,
+        cabins: results?.length,
+        anyDbError: results?.some((r) => r.dbPersisted === false),
+      });
     }
 
     return NextResponse.json({ ok: true, ...result, trackedBundlePricing });

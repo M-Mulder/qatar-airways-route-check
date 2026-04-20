@@ -9,6 +9,7 @@ import {
 } from "@/lib/googleFlightsSerp";
 import { getPrisma } from "@/lib/prisma";
 import {
+  getTrackedBundleAdults,
   getTrackedBundleLegDates,
   getTrackedFlightNumbers,
   getTrackedOfficialBookWith,
@@ -24,10 +25,21 @@ export type TrackedBundleCabinResult = {
   flightNumbersSummary: string | null;
   error: string | null;
   serpSearchId: string | null;
+  /** False when Prisma insert failed (e.g. missing migration / table). */
+  dbPersisted?: boolean;
+  dbError?: string | null;
 };
 
 function cabinToPrisma(c: TrackedCabin): string {
   return c;
+}
+
+function logPricing(message: string, extra?: Record<string, unknown>) {
+  if (extra && Object.keys(extra).length > 0) {
+    console.log(`[pricing] ${message}`, extra);
+  } else {
+    console.log(`[pricing] ${message}`);
+  }
 }
 
 export async function runTrackedBundlePriceSnapshots(): Promise<{
@@ -37,22 +49,45 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
 }> {
   const key = process.env.SERPAPI_KEY?.trim();
   if (!key) {
+    logPricing("skip: SERPAPI_KEY unset");
     return { skipped: true, reason: "SERPAPI_KEY not set", results: [] };
   }
 
   const prisma = getPrisma();
   if (!prisma) {
+    logPricing("skip: Prisma client null (DATABASE_URL?)");
     return { skipped: true, reason: "Database unavailable", results: [] };
   }
 
   const legDates = getTrackedBundleLegDates();
   const nums = getTrackedFlightNumbers();
+  const adults = getTrackedBundleAdults();
   const bundleFirstLegDate = new Date(`${legDates.firstLegIso}T12:00:00.000Z`);
   const currency = process.env.TRACKED_BUNDLE_CURRENCY?.trim() || "EUR";
   const officialSeller = getTrackedOfficialBookWith();
 
+  logPricing("start", {
+    firstLeg: legDates.firstLegIso,
+    secondLeg: legDates.secondLegIso,
+    flights: `QR${nums.first}+QR${nums.second}`,
+    adults,
+    currency,
+    officialSeller,
+  });
+
   const cabins: TrackedCabin[] = ["ECONOMY", "BUSINESS"];
   const results: TrackedBundleCabinResult[] = [];
+
+  const persist = async (data: Parameters<typeof prisma.trackedBundlePriceSnapshot.create>[0]["data"]) => {
+    try {
+      await prisma.trackedBundlePriceSnapshot.create({ data });
+      return { ok: true as const, error: null as string | null };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logPricing("db insert failed", { message: msg });
+      return { ok: false as const, error: msg };
+    }
+  };
 
   for (const cabin of cabins) {
     let json;
@@ -60,6 +95,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       ({ json } = await fetchGoogleFlightsBundle({ apiKey: key, cabin, legDates }));
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
+      logPricing(`cabin ${cabin}: search request threw`, { message });
       results.push({
         cabin,
         ok: false,
@@ -71,19 +107,19 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
         error: message,
         serpSearchId: null,
       });
-      await prisma.trackedBundlePriceSnapshot.create({
-        data: {
-          bundleFirstLegDate,
-          cabin: cabinToPrisma(cabin),
-          priceTotal: null,
-          currency,
-          matchedBundle: false,
-          qsuiteIndicatorsPresent: null,
-          flightNumbersSummary: null,
-          error: message,
-          serpSearchId: null,
-        },
+      const p = await persist({
+        bundleFirstLegDate,
+        cabin: cabinToPrisma(cabin),
+        priceTotal: null,
+        currency,
+        matchedBundle: false,
+        qsuiteIndicatorsPresent: null,
+        flightNumbersSummary: null,
+        error: message,
+        serpSearchId: null,
       });
+      results[results.length - 1]!.dbPersisted = p.ok;
+      results[results.length - 1]!.dbError = p.error;
       continue;
     }
 
@@ -91,6 +127,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
     const status = json.search_metadata?.status;
     if (metaErr || status === "Error") {
       const errText = metaErr || "SerpAPI search failed";
+      logPricing(`cabin ${cabin}: SerpAPI search error`, { errText, status });
       results.push({
         cabin,
         ok: false,
@@ -102,24 +139,29 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
         error: errText,
         serpSearchId: json.search_metadata?.id ?? null,
       });
-      await prisma.trackedBundlePriceSnapshot.create({
-        data: {
-          bundleFirstLegDate,
-          cabin: cabinToPrisma(cabin),
-          priceTotal: null,
-          currency,
-          matchedBundle: false,
-          qsuiteIndicatorsPresent: null,
-          flightNumbersSummary: null,
-          error: errText,
-          serpSearchId: json.search_metadata?.id ?? null,
-        },
+      const p = await persist({
+        bundleFirstLegDate,
+        cabin: cabinToPrisma(cabin),
+        priceTotal: null,
+        currency,
+        matchedBundle: false,
+        qsuiteIndicatorsPresent: null,
+        flightNumbersSummary: null,
+        error: errText,
+        serpSearchId: json.search_metadata?.id ?? null,
       });
+      results[results.length - 1]!.dbPersisted = p.ok;
+      results[results.length - 1]!.dbError = p.error;
       continue;
     }
 
     const bundle = findMatchingBundle(json, nums);
     const matched = bundle !== null;
+    logPricing(`cabin ${cabin}: search ok`, {
+      matched,
+      serpId: json.search_metadata?.id,
+      hasBookingToken: Boolean(bundle?.booking_token),
+    });
 
     let priceTotal: number | null = null;
     let bookingJson: GoogleFlightsBookingApiResponse | null = null;
@@ -130,6 +172,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       if (!token) {
         detailError =
           "Matched QR itinerary but SerpAPI bundle had no booking_token; cannot load booking options for airline-direct price.";
+        logPricing(`cabin ${cabin}: ${detailError}`);
       } else {
         try {
           ({ json: bookingJson } = await fetchGoogleFlightsBookingOptions({
@@ -140,7 +183,9 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
           const bStatus = bookingJson.search_metadata?.status;
           if (bErr || bStatus === "Error") {
             detailError = bErr || "SerpAPI booking_options request failed";
+            logPricing(`cabin ${cabin}: booking_options error`, { detailError, bStatus });
           } else {
+            const bookingCount = bookingJson.booking_options?.length ?? 0;
             const picked = extractOfficialAirlineDirectPrice(
               bookingJson.booking_options,
               officialSeller,
@@ -148,12 +193,19 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
             );
             if (picked) {
               priceTotal = picked.price;
+              logPricing(`cabin ${cabin}: airline-direct price`, {
+                price: priceTotal,
+                bookWith: picked.bookWith,
+                bookingOptionsCount: bookingCount,
+              });
             } else {
               detailError = `No airline-direct "${officialSeller}" row in booking_options (OTAs only or seller name mismatch).`;
+              logPricing(`cabin ${cabin}: ${detailError}`, { bookingOptionsCount: bookingCount });
             }
           }
         } catch (e) {
           detailError = e instanceof Error ? e.message : String(e);
+          logPricing(`cabin ${cabin}: booking_options threw`, { detailError });
         }
       }
     }
@@ -166,7 +218,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
     const baseErr = matched ? null : `No QR${nums.first}+QR${nums.second} itinerary in SerpAPI results`;
     const error = [baseErr, detailError].filter(Boolean).join(" ") || null;
 
-    results.push({
+    const row: TrackedBundleCabinResult = {
       cabin,
       ok: true,
       matchedBundle: matched,
@@ -176,22 +228,34 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
       error,
       serpSearchId: json.search_metadata?.id ?? null,
-    });
+    };
 
-    await prisma.trackedBundlePriceSnapshot.create({
-      data: {
-        bundleFirstLegDate,
-        cabin: cabinToPrisma(cabin),
-        priceTotal,
-        currency,
-        matchedBundle: matched,
-        qsuiteIndicatorsPresent,
-        flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
-        error,
-        serpSearchId: json.search_metadata?.id ?? null,
-      },
+    const p = await persist({
+      bundleFirstLegDate,
+      cabin: cabinToPrisma(cabin),
+      priceTotal,
+      currency,
+      matchedBundle: matched,
+      qsuiteIndicatorsPresent,
+      flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
+      error,
+      serpSearchId: json.search_metadata?.id ?? null,
     });
+    row.dbPersisted = p.ok;
+    row.dbError = p.error;
+    results.push(row);
   }
+
+  logPricing("done", {
+    results: results.map((r) => ({
+      cabin: r.cabin,
+      matched: r.matchedBundle,
+      price: r.priceTotal,
+      dbOk: r.dbPersisted,
+      err: r.error?.slice(0, 120) ?? null,
+      dbErr: r.dbError?.slice(0, 120) ?? null,
+    })),
+  });
 
   return { skipped: false, results };
 }
