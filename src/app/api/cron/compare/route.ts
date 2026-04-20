@@ -38,6 +38,8 @@ export async function GET(req: Request) {
   const segs = segments.length ? segments : DEFAULT_SEGMENTS;
 
   try {
+    const cronStarted = Date.now();
+    console.log("[cron] compare GET: loading planned rows");
     const plannedRows = await loadPlannedRowsFromDatabase();
     if (plannedRows.length === 0) {
       return NextResponse.json(
@@ -61,11 +63,20 @@ export async function GET(req: Request) {
       if (compareDateIsos.length === 0) compareDateIsos = windowDates;
     }
 
+    console.log("[cron] compare: running FR24/compare job", { dates: compareDateIsos, segments: segs });
     const result = await runCompareForDates(compareDateIsos, segs, plannedRows);
+    console.log("[cron] compare: compare job finished ms=", Date.now() - cronStarted, {
+      compareDates: result.compareDates,
+      segmentsProcessed: result.segmentsProcessed,
+      errorsCount: result.errors?.length ?? 0,
+    });
 
     let trackedBundlePricing: Awaited<ReturnType<typeof runTrackedBundlePriceSnapshots>> | null = null;
+    const pricingStarted = Date.now();
+    console.log("[cron] starting Google Flights /pricing snapshot (SERPAPI_KEY set:", Boolean(process.env.SERPAPI_KEY?.trim()), ")");
     try {
       trackedBundlePricing = await runTrackedBundlePriceSnapshots();
+      console.log("[cron] pricing snapshot finished ms=", Date.now() - pricingStarted);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error("[pricing] runTrackedBundlePriceSnapshots threw:", message);

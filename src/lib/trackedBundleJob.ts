@@ -4,6 +4,8 @@ import {
   fetchGoogleFlightsBundle,
   findMatchingBundle,
   qsuiteMarkersPresentForBusiness,
+  summarizeBookingOptionsForLog,
+  summarizeFlightSearchForLog,
   type GoogleFlightsBookingApiResponse,
   type TrackedCabin,
 } from "@/lib/googleFlightsSerp";
@@ -66,9 +68,11 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
   const currency = process.env.TRACKED_BUNDLE_CURRENCY?.trim() || "EUR";
   const officialSeller = getTrackedOfficialBookWith();
 
+  const tJobStart = Date.now();
   logPricing("start", {
     firstLeg: legDates.firstLegIso,
     secondLeg: legDates.secondLegIso,
+    bundleFirstLegDate: bundleFirstLegDate.toISOString().slice(0, 10),
     flights: `QR${nums.first}+QR${nums.second}`,
     adults,
     currency,
@@ -161,7 +165,13 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       matched,
       serpId: json.search_metadata?.id,
       hasBookingToken: Boolean(bundle?.booking_token),
+      bundleListPrice: typeof bundle?.price === "number" ? bundle.price : null,
     });
+    if (!matched) {
+      logPricing(`cabin ${cabin}: no QR${nums.first}+QR${nums.second} bundle — SerpAPI itinerary sample`, {
+        ...summarizeFlightSearchForLog(json),
+      });
+    }
 
     let priceTotal: number | null = null;
     let bookingJson: GoogleFlightsBookingApiResponse | null = null;
@@ -200,7 +210,10 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
               });
             } else {
               detailError = `No airline-direct "${officialSeller}" row in booking_options (OTAs only or seller name mismatch).`;
-              logPricing(`cabin ${cabin}: ${detailError}`, { bookingOptionsCount: bookingCount });
+              logPricing(`cabin ${cabin}: ${detailError}`, {
+                bookingOptionsCount: bookingCount,
+                ...summarizeBookingOptionsForLog(bookingJson.booking_options),
+              });
             }
           }
         } catch (e) {
@@ -243,10 +256,14 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
     });
     row.dbPersisted = p.ok;
     row.dbError = p.error;
+    if (p.ok) {
+      logPricing(`cabin ${cabin}: row persisted`, { qsuite: row.qsuiteIndicatorsPresent });
+    }
     results.push(row);
   }
 
   logPricing("done", {
+    totalMs: Date.now() - tJobStart,
     results: results.map((r) => ({
       cabin: r.cabin,
       matched: r.matchedBundle,

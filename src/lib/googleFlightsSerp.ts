@@ -51,6 +51,82 @@ export type GoogleFlightsBookingApiResponse = {
 
 const SERP_ENDPOINT = "https://serpapi.com/search.json";
 
+/** Set `PRICING_VERBOSE=0` to reduce `[pricing]` noise; default is verbose for Vercel debugging. */
+function pricingVerbose(): boolean {
+  return process.env.PRICING_VERBOSE?.trim() !== "0";
+}
+
+function logSerp(message: string, extra?: Record<string, unknown>) {
+  if (!pricingVerbose()) return;
+  if (extra && Object.keys(extra).length > 0) {
+    console.log(`[pricing:serp] ${message}`, extra);
+  } else {
+    console.log(`[pricing:serp] ${message}`);
+  }
+}
+
+/** Safe for logs (never includes api_key or full booking_token). */
+export function redactSerpUrl(url: string): string {
+  return url
+    .replace(/api_key=[^&]*/i, "api_key=(redacted)")
+    .replace(/booking_token=[^&]*/i, (m) => {
+      const len = m.split("=")[1]?.length ?? 0;
+      return `booking_token=(redacted,len=${len})`;
+    });
+}
+
+/** When QR bundle is not found, log what SerpAPI did return (first N two-leg pairs). */
+export function summarizeFlightSearchForLog(res: GoogleFlightsApiResponse): {
+  searchStatus?: string;
+  searchId?: string;
+  bestFlights: number;
+  otherFlights: number;
+  sampleLegPairs: string[];
+  topListPrice?: number;
+} {
+  const pairs: string[] = [];
+  const take = (bundles: GoogleFlightsBundle[] | undefined, max: number) => {
+    for (const b of bundles ?? []) {
+      if (pairs.length >= max) break;
+      const fs = b.flights ?? [];
+      if (fs.length >= 2) {
+        pairs.push(`${fs[0]?.flight_number ?? "?"}→${fs[1]?.flight_number ?? "?"}`);
+      }
+    }
+  };
+  take(res.best_flights, 12);
+  take(res.other_flights, 12);
+  const firstPrice =
+    res.best_flights?.[0]?.price ?? res.other_flights?.[0]?.price;
+  return {
+    searchStatus: res.search_metadata?.status,
+    searchId: res.search_metadata?.id,
+    bestFlights: res.best_flights?.length ?? 0,
+    otherFlights: res.other_flights?.length ?? 0,
+    sampleLegPairs: pairs.slice(0, 16),
+    topListPrice: typeof firstPrice === "number" ? firstPrice : undefined,
+  };
+}
+
+/** Log all booking rows (seller + airline flag + price) for debugging OTA vs direct. */
+export function summarizeBookingOptionsForLog(options: BookingOption[] | undefined): {
+  count: number;
+  rows: { bookWith: string; airline: boolean | null; price: number | null }[];
+} {
+  const rows: { bookWith: string; airline: boolean | null; price: number | null }[] = [];
+  for (const opt of options ?? []) {
+    const t = opt.together;
+    if (!t) continue;
+    rows.push({
+      bookWith: (t.book_with || "").trim() || "(empty)",
+      airline: typeof t.airline === "boolean" ? t.airline : null,
+      price: typeof t.price === "number" ? t.price : null,
+    });
+    if (rows.length >= 24) break;
+  }
+  return { count: options?.length ?? 0, rows };
+}
+
 function travelClassParam(cabin: TrackedCabin): string {
   return cabin === "BUSINESS" ? "3" : "1";
 }
@@ -170,8 +246,30 @@ export async function fetchGoogleFlightsBundle(params: {
   });
 
   const urlUsed = `${SERP_ENDPOINT}?${sp.toString()}`;
+  logSerp("search request", {
+    cabin: params.cabin,
+    travelClass: travelClassParam(params.cabin),
+    multiCity: multiCityJson,
+    hl: sp.get("hl"),
+    gl: sp.get("gl"),
+    currency: sp.get("currency"),
+    adults: sp.get("adults"),
+    deepSearch: sp.get("deep_search"),
+    url: redactSerpUrl(urlUsed),
+  });
+
+  const t0 = Date.now();
   const r = await fetch(urlUsed, { method: "GET", cache: "no-store" });
   const json = (await r.json()) as GoogleFlightsApiResponse;
+  const ms = Date.now() - t0;
+
+  logSerp("search response", {
+    cabin: params.cabin,
+    httpStatus: r.status,
+    ms,
+    ...summarizeFlightSearchForLog(json),
+    serpError: json.error ?? null,
+  });
 
   if (!r.ok) {
     return {
@@ -206,8 +304,30 @@ export async function fetchGoogleFlightsBookingOptions(params: {
   });
 
   const urlUsed = `${SERP_ENDPOINT}?${sp.toString()}`;
+  logSerp("booking_options request", {
+    bookingTokenLen: params.bookingToken.length,
+    hl: sp.get("hl"),
+    currency: sp.get("currency"),
+    adults: sp.get("adults"),
+    url: redactSerpUrl(urlUsed),
+  });
+
+  const t0 = Date.now();
   const r = await fetch(urlUsed, { method: "GET", cache: "no-store" });
   const json = (await r.json()) as GoogleFlightsBookingApiResponse;
+  const ms = Date.now() - t0;
+
+  const optSummary = summarizeBookingOptionsForLog(json.booking_options);
+  logSerp("booking_options response", {
+    httpStatus: r.status,
+    ms,
+    searchStatus: json.search_metadata?.status,
+    searchId: json.search_metadata?.id,
+    bookingOptionsCount: optSummary.count,
+    bookingRowsPreview: optSummary.rows,
+    selectedFlightsLen: Array.isArray(json.selected_flights) ? json.selected_flights.length : 0,
+    serpError: json.error ?? null,
+  });
 
   if (!r.ok) {
     return {

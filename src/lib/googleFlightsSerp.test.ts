@@ -3,6 +3,8 @@ import {
   extractOfficialAirlineDirectPrice,
   findMatchingBundle,
   hasQsuiteSuiteMarkersInText,
+  redactSerpUrl,
+  summarizeFlightSearchForLog,
 } from "@/lib/googleFlightsSerp";
 
 describe("findMatchingBundle", () => {
@@ -37,6 +39,34 @@ describe("findMatchingBundle", () => {
 describe("hasQsuiteSuiteMarkersInText", () => {
   it("detects Dutch suite copy", () => {
     expect(hasQsuiteSuiteMarkersInText('something "Individuele suite"')).toBe(true);
+  });
+});
+
+describe("redactSerpUrl", () => {
+  it("redacts api_key and shortens booking_token", () => {
+    const u =
+      "https://serpapi.com/search.json?engine=google_flights&api_key=SECRET123&booking_token=ABCDEFGHIJ";
+    expect(redactSerpUrl(u)).toContain("api_key=(redacted)");
+    expect(redactSerpUrl(u)).toContain("booking_token=(redacted,len=");
+    expect(redactSerpUrl(u)).not.toContain("SECRET");
+  });
+});
+
+describe("summarizeFlightSearchForLog", () => {
+  it("counts bundles and samples leg pairs", () => {
+    const res = {
+      search_metadata: { status: "Success", id: "abc" },
+      best_flights: [
+        {
+          flights: [{ flight_number: "QR 274" }, { flight_number: "QR 934" }],
+          price: 100,
+        },
+      ],
+      other_flights: [],
+    };
+    const s = summarizeFlightSearchForLog(res);
+    expect(s.bestFlights).toBe(1);
+    expect(s.sampleLegPairs[0]).toContain("QR");
   });
 });
 
