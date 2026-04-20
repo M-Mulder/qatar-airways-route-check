@@ -1,5 +1,9 @@
 import Link from "next/link";
-import { getTrackedBundleLegDates, getTrackedFlightNumbers } from "@/lib/trackedBundleConfig";
+import {
+  getTrackedBundleAdults,
+  getTrackedBundleLegDates,
+  getTrackedFlightNumbers,
+} from "@/lib/trackedBundleConfig";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import { PricingChart, type PricingChartRow } from "./PricingChart";
 
@@ -28,6 +32,7 @@ function aggregateDaily(rows: { cabin: string; observedAt: Date; priceTotal: num
 export default async function PricingPage() {
   const legs = getTrackedBundleLegDates();
   const nums = getTrackedFlightNumbers();
+  const adults = getTrackedBundleAdults();
   const bundleFirstLegDate = new Date(`${legs.firstLegIso}T12:00:00.000Z`);
 
   let chartRows: PricingChartRow[] = [];
@@ -69,8 +74,15 @@ export default async function PricingPage() {
           <span className="text-[var(--ops-fg)]">
             AMS→DOH ({legs.firstLegIso}, QR{nums.first}) then DOH→MNL ({legs.secondLegIso}, QR{nums.second})
           </span>
-          . Economy and business totals (EUR, NL locale) are recorded when the exact two-leg QR itinerary appears in
-          results.
+          . Prices come from Google Flights <span className="text-[var(--ops-fg)]">booking options</span> for the{" "}
+          <span className="text-[var(--ops-fg)]">airline-direct</span> seller (default{" "}
+          <span className="text-[var(--ops-fg)]">Qatar Airways</span>), not third-party sites such as BudgetAir or
+          Booking.com. Amounts are{" "}
+          <span className="text-[var(--ops-fg)]">
+            total for {adults} adult{adults === 1 ? "" : "s"}
+          </span>{" "}
+          in <span className="text-[var(--ops-fg)]">EUR</span> (see{" "}
+          <code className="text-[var(--ops-cyan)]">TRACKED_BUNDLE_CURRENCY</code>).
         </p>
         <p className="mt-2 text-sm text-[var(--ops-subtle)]">
           Cron runs with the compare job at <span className="text-[var(--ops-fg)]">17:30 UTC</span> (

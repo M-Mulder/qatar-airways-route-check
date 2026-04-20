@@ -1,6 +1,10 @@
 /**
  * Env-driven defaults for the AMS → DOH → MNL Qatar bundle tracked via SerpAPI.
- * First leg: QR274. Second leg: QR934 (overnight in DOH).
+ *
+ * This is **one ticket, one way**, with a **layover in Doha** (~18h): QR274 then QR934.
+ * Google Flights / SerpAPI still model it as **two flight segments** with different local dates
+ * (AMS→DOH on the departure day, DOH→MNL the next calendar day after the overnight stop).
+ * We use SerpAPI `type=3` + `multi_city_json` only to pin those two legs — not a “multi-city holiday”.
  */
 
 export type TrackedBundleLegDates = {
@@ -28,4 +32,17 @@ export function getTrackedFlightNumbers(): TrackedFlightNums {
     if (parts.length >= 2) return { first: parts[0]!, second: parts[1]! };
   }
   return { first: "274", second: "934" };
+}
+
+/** Google Flights `booking_options[].together.book_with` for airline-direct (not OTA). Default: Qatar Airways. */
+export function getTrackedOfficialBookWith(): string {
+  return process.env.TRACKED_OFFICIAL_BOOK_WITH?.trim() || "Qatar Airways";
+}
+
+/** Passenger count for SerpAPI `adults` (total price for all adults). Default: 2. */
+export function getTrackedBundleAdults(): number {
+  const raw = process.env.TRACKED_BUNDLE_ADULTS?.trim();
+  const n = raw ? Number.parseInt(raw, 10) : 2;
+  if (!Number.isFinite(n) || n < 1 || n > 9) return 2;
+  return n;
 }

@@ -1,11 +1,18 @@
 import {
+  extractOfficialAirlineDirectPrice,
+  fetchGoogleFlightsBookingOptions,
   fetchGoogleFlightsBundle,
   findMatchingBundle,
-  qsuiteMarkersPresentForBundle,
+  qsuiteMarkersPresentForBusiness,
+  type GoogleFlightsBookingApiResponse,
   type TrackedCabin,
 } from "@/lib/googleFlightsSerp";
 import { getPrisma } from "@/lib/prisma";
-import { getTrackedBundleLegDates, getTrackedFlightNumbers } from "@/lib/trackedBundleConfig";
+import {
+  getTrackedBundleLegDates,
+  getTrackedFlightNumbers,
+  getTrackedOfficialBookWith,
+} from "@/lib/trackedBundleConfig";
 
 export type TrackedBundleCabinResult = {
   cabin: TrackedCabin;
@@ -42,6 +49,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
   const nums = getTrackedFlightNumbers();
   const bundleFirstLegDate = new Date(`${legDates.firstLegIso}T12:00:00.000Z`);
   const currency = process.env.TRACKED_BUNDLE_CURRENCY?.trim() || "EUR";
+  const officialSeller = getTrackedOfficialBookWith();
 
   const cabins: TrackedCabin[] = ["ECONOMY", "BUSINESS"];
   const results: TrackedBundleCabinResult[] = [];
@@ -112,9 +120,51 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
 
     const bundle = findMatchingBundle(json, nums);
     const matched = bundle !== null;
-    const priceTotal = typeof bundle?.price === "number" ? Math.round(bundle.price) : null;
+
+    let priceTotal: number | null = null;
+    let bookingJson: GoogleFlightsBookingApiResponse | null = null;
+    let detailError: string | null = null;
+
+    if (matched && bundle) {
+      const token = bundle.booking_token?.trim();
+      if (!token) {
+        detailError =
+          "Matched QR itinerary but SerpAPI bundle had no booking_token; cannot load booking options for airline-direct price.";
+      } else {
+        try {
+          ({ json: bookingJson } = await fetchGoogleFlightsBookingOptions({
+            apiKey: key,
+            bookingToken: token,
+          }));
+          const bErr = bookingJson.error;
+          const bStatus = bookingJson.search_metadata?.status;
+          if (bErr || bStatus === "Error") {
+            detailError = bErr || "SerpAPI booking_options request failed";
+          } else {
+            const picked = extractOfficialAirlineDirectPrice(
+              bookingJson.booking_options,
+              officialSeller,
+              currency,
+            );
+            if (picked) {
+              priceTotal = picked.price;
+            } else {
+              detailError = `No airline-direct "${officialSeller}" row in booking_options (OTAs only or seller name mismatch).`;
+            }
+          }
+        } catch (e) {
+          detailError = e instanceof Error ? e.message : String(e);
+        }
+      }
+    }
+
     const qsuiteIndicatorsPresent =
-      cabin === "BUSINESS" && matched && bundle ? qsuiteMarkersPresentForBundle(bundle) : null;
+      matched && bundle
+        ? qsuiteMarkersPresentForBusiness(cabin, bookingJson, bundle)
+        : null;
+
+    const baseErr = matched ? null : `No QR${nums.first}+QR${nums.second} itinerary in SerpAPI results`;
+    const error = [baseErr, detailError].filter(Boolean).join(" ") || null;
 
     results.push({
       cabin,
@@ -124,7 +174,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       currency,
       qsuiteIndicatorsPresent,
       flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
-      error: matched ? null : `No QR${nums.first}+QR${nums.second} itinerary in SerpAPI results`,
+      error,
       serpSearchId: json.search_metadata?.id ?? null,
     });
 
@@ -137,7 +187,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
         matchedBundle: matched,
         qsuiteIndicatorsPresent,
         flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
-        error: matched ? null : `No QR${nums.first}+QR${nums.second} itinerary in SerpAPI results`,
+        error,
         serpSearchId: json.search_metadata?.id ?? null,
       },
     });
