@@ -18,7 +18,8 @@ This project is **not affiliated with, endorsed by, or sponsored by** Qatar Airw
 - **Without `?date=`**: compares **yesterday, today, and tomorrow** in `Europe/Amsterdam` for each configured segment, but **drops** calendar days before the earliest `departure_local` date present in **PlannedSegment** for those legs (so you do not write empty rows before the export exists). FR24 HTML is fetched **once per flight** per run. Override with `?date=YYYY-MM-DD` for a single-day backfill.
 - **Postgres + dashboard**: only rows with a **decisive** Qsuite comparison (**Match** or **Mismatch**) are **saved** and **shown**; inconclusive legs (missing planned API flag or tail / no FR24 row) are removed from the table on each run.
 - Segments: **QR274**, **QR284** (AMS–DOH), **QR934** (DOH–MNL) — override with `COMPARE_FLIGHTS=QR274,QR284`.
-- **`/`** redirects to **`/compare`** (dashboard: stored compares, upcoming vs past schedule tables, **Signal deck** analytics with a **Recharts** interactive Qsuite timeline per route, equipment match donut, and tail diversity / “QATAR’ed” stats).
+- **`/`** redirects to **`/compare`** (dashboard: stored compares, upcoming vs past schedule tables, **Signal deck** analytics with a **Recharts** interactive Qsuite timeline per route, equipment match donut, and tail diversity / “QATAR’ed” stats). **`/pricing`** charts daily **Google Flights** prices (SerpAPI) for a fixed **AMS→DOH→MNL** Qatar bundle (economy + business); a **red site-wide banner** appears if the business itinerary no longer lists suite amenities (Qsuite) in the API payload.
+- With **`SERPAPI_KEY`**, the same daily cron also writes **`TrackedBundlePriceSnapshot`** rows for that bundle (see [`prisma/schema.prisma`](prisma/schema.prisma)).
 
 ## Setup
 
@@ -50,6 +51,8 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 | `SERPER_API_KEY` | Optional; [Serper.dev](https://serper.dev) API key. When set, Airfleets data for the registration hover is loaded via **`POST https://scrape.serper.dev`** (no Playwright). Serper bills per scrape; keep the key secret and rotate if exposed. |
 | `GOOGLE_CSE_API_KEY` | Optional; [Custom Search JSON API](https://developers.google.com/custom-search/v1/overview) key. When set with **`GOOGLE_CSE_ID`** (and **no** Serper key), each tail lookup tries **Google’s indexed** Airfleets `ficheapp` snippet first, then falls back to Playwright if needed. |
 | `GOOGLE_CSE_ID` | Programmable Search Engine **cx** value (engine must be allowed to return `airfleets.net` results). |
+| `SERPAPI_KEY` | Optional; [SerpAPI](https://serpapi.com/) key for **Google Flights** (`engine=google_flights`). When set, the daily cron stores economy + business prices for the tracked bundle and powers **`/pricing`**. Keep the key secret and rotate if exposed. |
+| `TRACKED_BUNDLE_*` | Optional; see [`env.example`](env.example) — first/second leg dates, flight numbers (`274,934`), `hl`/`gl`/`currency` for the SerpAPI search. |
 | `AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY` | Optional `1` / `true`: before Airfleets, Playwright runs a **Google** search for **`{registration} Airfleets`** and clicks the first `airfleets.net` link; if it lands on a **`ficheapp/plane-`** page, the Airfleets search step is skipped. **Off by default** (Google often blocks or CAPTCHAs serverless IPs; automated use of Google may conflict with their terms). Similar motivation to open-source tools like [web-agent-master/google-search](https://github.com/web-agent-master/google-search), but we do not bundle that project. |
 
 ## Planned segments (database)
@@ -69,7 +72,7 @@ Matching uses **`departure_local` date (first 10 chars = YYYY-MM-DD)** as the op
 
 ## Database
 
-Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Migrations: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql), [`prisma/migrations/20260416183000_planned_segment/migration.sql`](prisma/migrations/20260416183000_planned_segment/migration.sql), [`prisma/migrations/20260417120000_daily_compare_equipment/migration.sql`](prisma/migrations/20260417120000_daily_compare_equipment/migration.sql) (`actualEquipment`, `matchEquipment` on `DailyCompare`), [`prisma/migrations/20260418180000_airfleets_payload/migration.sql`](prisma/migrations/20260418180000_airfleets_payload/migration.sql) (`airfleetsPayload` JSON on `DailyCompare` for registration hover). If `migrate deploy` is blocked, apply SQL manually (e.g. `npm run db:apply-compare-equipment-migration` / `npm run db:apply-airfleets-migration`), then **`npm run db:generate`** and re-run cron.
+Prisma schema: [`prisma/schema.prisma`](prisma/schema.prisma). Migrations: [`prisma/migrations/20260416150000_init/migration.sql`](prisma/migrations/20260416150000_init/migration.sql), [`prisma/migrations/20260416183000_planned_segment/migration.sql`](prisma/migrations/20260416183000_planned_segment/migration.sql), [`prisma/migrations/20260417120000_daily_compare_equipment/migration.sql`](prisma/migrations/20260417120000_daily_compare_equipment/migration.sql) (`actualEquipment`, `matchEquipment` on `DailyCompare`), [`prisma/migrations/20260418180000_airfleets_payload/migration.sql`](prisma/migrations/20260418180000_airfleets_payload/migration.sql) (`airfleetsPayload` JSON on `DailyCompare` for registration hover), [`prisma/migrations/20260420120000_tracked_bundle_price/migration.sql`](prisma/migrations/20260420120000_tracked_bundle_price/migration.sql) (`TrackedBundlePriceSnapshot` for `/pricing`). If `migrate deploy` is blocked, apply SQL manually (e.g. `npm run db:apply-compare-equipment-migration` / `npm run db:apply-airfleets-migration` / `npm run db:apply-tracked-bundle-migration`), then **`npm run db:generate`** and re-run cron.
 
 ```bash
 npm run db:migrate
@@ -94,7 +97,7 @@ The [`vercel`](https://vercel.com/docs/cli) CLI is a **devDependency**. This rep
    npm run vercel:sync-env:preview
    ```
 
-   Sets `DATABASE_URL`, `CRON_SECRET`, `COMPARE_FLIGHTS`, `SERPER_API_KEY`, and `GOOGLE_CSE_*` when present. Configure any other keys in the [Vercel dashboard](https://vercel.com/docs/projects/environment-variables) if you add them later.
+   Sets `DATABASE_URL`, `CRON_SECRET`, `COMPARE_FLIGHTS`, `SERPER_API_KEY`, `SERPAPI_KEY`, and `GOOGLE_CSE_*` when present. Configure any other keys in the [Vercel dashboard](https://vercel.com/docs/projects/environment-variables) if you add them later.
 
 3. **Deploy**: `npm run vercel:deploy` (or connect the GitHub repo in the Vercel dashboard for automatic deployments).
 
@@ -104,9 +107,9 @@ The **build** runs `next build` only (`postinstall` already runs `prisma generat
 
 ## Cron (Vercel)
 
-[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`0 9 * * *`** (09:00 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
+[`vercel.json`](vercel.json) schedules **`GET /api/cron/compare`** **once per day** at **`30 17 * * *`** (17:30 UTC). On the [**Hobby** plan](https://vercel.com/docs/cron-jobs/usage-and-pricing), Vercel only allows **one cron invocation per day**; a second schedule would fail at deploy time.
 
-Roughly, **09:00 UTC** is **10:00** local in Amsterdam during **CET** (winter) and **11:00** during **CEST** (summer). Vercel crons are UTC-only, so adjust expectations if you care about a fixed local wall time year-round.
+Roughly, **17:30 UTC** is **18:30** local in Amsterdam during **CET** (winter) and **19:30** during **CEST** (summer). Vercel crons are UTC-only, so adjust expectations if you care about a fixed local wall time year-round.
 
 Ensure **Cron Jobs** are enabled on the project and `CRON_SECRET` is set in Production.
 

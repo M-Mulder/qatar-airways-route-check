@@ -20,7 +20,7 @@
   "crons": [
     {
       "path": "/api/cron/compare",
-      "schedule": "0 9 * * *"
+      "schedule": "30 17 * * *"
     }
   ],
   "functions": {

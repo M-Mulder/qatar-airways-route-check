@@ -8,7 +8,7 @@
  *   node scripts/sync-env-to-vercel.mjs
  *   node scripts/sync-env-to-vercel.mjs --preview   # also sync preview
  *
- * Does not print values. Keys: DATABASE_URL, CRON_SECRET, COMPARE_FLIGHTS, SERPER_API_KEY, GOOGLE_CSE_* (if set).
+ * Does not print values. Keys: DATABASE_URL, CRON_SECRET, COMPARE_FLIGHTS, SERPER_API_KEY, SERPAPI_KEY, GOOGLE_CSE_* (if set).
  */
 import { spawnSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -23,6 +23,7 @@ const KEYS = [
   "CRON_SECRET",
   "COMPARE_FLIGHTS",
   "SERPER_API_KEY",
+  "SERPAPI_KEY",
   "GOOGLE_CSE_API_KEY",
   "GOOGLE_CSE_ID",
   "AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY",
@@ -61,7 +62,13 @@ for (const target of targets) {
       continue;
     }
     const args = ["env", "add", key, target, "--force"];
-    if (key === "DATABASE_URL" || key === "CRON_SECRET" || key === "GOOGLE_CSE_API_KEY" || key === "SERPER_API_KEY")
+    if (
+      key === "DATABASE_URL" ||
+      key === "CRON_SECRET" ||
+      key === "GOOGLE_CSE_API_KEY" ||
+      key === "SERPER_API_KEY" ||
+      key === "SERPAPI_KEY"
+    )
       args.push("--sensitive");
     // No trailing newline — Vercel rejects secrets used in headers if value has stray whitespace.
     const add = vercelSpawn(args, val);

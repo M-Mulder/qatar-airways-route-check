@@ -23,6 +23,7 @@
     "db:apply-planned-migration": "node scripts/db-sql.mjs prisma/migrations/20260416183000_planned_segment/migration.sql",
     "db:apply-compare-equipment-migration": "node scripts/db-sql.mjs prisma/migrations/20260417120000_daily_compare_equipment/migration.sql",
     "db:apply-airfleets-migration": "node scripts/db-sql.mjs prisma/migrations/20260418180000_airfleets_payload/migration.sql",
+    "db:apply-tracked-bundle-migration": "node scripts/db-sql.mjs prisma/migrations/20260420120000_tracked_bundle_price/migration.sql",
     "db:clear-compares": "node scripts/db-sql.mjs scripts/clear-compares.sql",
     "db:seed-planned": "node scripts/seed-planned-segments.mjs",
     "data:add-april16-sample": "node scripts/append-april16-sample.mjs",

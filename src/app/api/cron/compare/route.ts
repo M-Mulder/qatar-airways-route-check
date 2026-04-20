@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_SEGMENTS, getSegmentsFromEnv } from "@/lib/config";
 import { runCompareForDates } from "@/lib/compareJob";
+import { runTrackedBundlePriceSnapshots } from "@/lib/trackedBundleJob";
 import { amsterdamThreeDayCompareWindowIso } from "@/lib/dates";
 import { pickMinCompareDateFromPlannedRows } from "@/lib/plannedCsv";
 import { loadPlannedRowsFromDatabase } from "@/lib/plannedFromDb";
@@ -14,7 +15,7 @@ function unauthorized() {
 
 /**
  * Vercel Cron: GET with Authorization Bearer CRON_SECRET. Schedule is `vercel.json` (once daily on Hobby;
- * e.g. 04:00 UTC ≈ 06:00 Europe/Amsterdam during CEST).
+ * e.g. 17:30 UTC). When `SERPAPI_KEY` is set, the same run also records Google Flights bundle prices (`/pricing`).
  * - No `?date=`: compare **yesterday, today, and tomorrow** (Europe/Amsterdam), intersected with dates
  *   **on or after** the earliest planned departure in Postgres for configured segments (avoids empty runs
  *   before your export starts). Live comparison data is fetched once per flight for the whole batch.
@@ -61,7 +62,20 @@ export async function GET(req: Request) {
     }
 
     const result = await runCompareForDates(compareDateIsos, segs, plannedRows);
-    return NextResponse.json({ ok: true, ...result });
+
+    let trackedBundlePricing: Awaited<ReturnType<typeof runTrackedBundlePriceSnapshots>> | null = null;
+    try {
+      trackedBundlePricing = await runTrackedBundlePriceSnapshots();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      trackedBundlePricing = {
+        skipped: true,
+        reason: message,
+        results: [],
+      };
+    }
+
+    return NextResponse.json({ ok: true, ...result, trackedBundlePricing });
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ ok: false, error: message }, { status: 500 });

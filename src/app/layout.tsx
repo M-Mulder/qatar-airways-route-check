@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { Fraunces, IBM_Plex_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { QsuitePriceAlertBar } from "@/components/QsuitePriceAlertBar";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -45,7 +46,7 @@ export const viewport: Viewport = {
   themeColor: "#06080c",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -56,7 +57,7 @@ export default function RootLayout({
     <html lang="en" className={`${fontVars} h-full antialiased`}>
       <body className="flex min-h-full flex-col">
         <header className="relative z-20 border-b border-[var(--ops-line)] bg-[var(--ops-elevated)]/80 backdrop-blur-md ops-header-shimmer">
-          <div className="mx-auto flex max-w-6xl items-center px-4 py-4 md:px-6">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 md:px-6">
             <Link
               href="/compare"
               className="group flex min-w-0 max-w-full items-center gap-3 md:gap-3.5"
@@ -78,8 +79,23 @@ export default function RootLayout({
                 <span className="text-[var(--ops-fg)]">&apos;ed</span>
               </span>
             </Link>
+            <nav className="flex shrink-0 items-center gap-5 text-sm font-medium">
+              <Link
+                href="/compare"
+                className="text-[var(--ops-muted)] transition-colors hover:text-[var(--ops-cyan)]"
+              >
+                Compare
+              </Link>
+              <Link
+                href="/pricing"
+                className="text-[var(--ops-muted)] transition-colors hover:text-[var(--ops-cyan)]"
+              >
+                Pricing
+              </Link>
+            </nav>
           </div>
         </header>
+        <QsuitePriceAlertBar />
         <main className="ops-main-grid relative z-10 flex-1">{children}</main>
       </body>
     </html>

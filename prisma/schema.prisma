@@ -61,3 +61,22 @@ model PlannedSegment {
   @@index([flightNumber, origin, destination])
   @@index([queryDate])
 }
+
+/// Daily SerpAPI Google Flights snapshot for a fixed AMS→DOH→MNL Qatar bundle (cron).
+model TrackedBundlePriceSnapshot {
+  id                      String   @id @default(cuid())
+  observedAt              DateTime @default(now())
+  /// Outbound AMS departure date of the shopped itinerary (first multi-city leg).
+  bundleFirstLegDate      DateTime @db.Date
+  cabin                   String
+  priceTotal              Int?
+  currency                String   @default("EUR")
+  matchedBundle           Boolean  @default(false)
+  /// Set for BUSINESS only: true when suite markers appear in the matched itinerary payload.
+  qsuiteIndicatorsPresent Boolean?
+  flightNumbersSummary    String?
+  error                   String?
+  serpSearchId            String?
+
+  @@index([bundleFirstLegDate, cabin, observedAt])
+}
