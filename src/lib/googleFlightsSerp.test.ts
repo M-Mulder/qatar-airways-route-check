@@ -3,6 +3,7 @@ import {
   extractOfficialAirlineDirectPrice,
   findMatchingBundle,
   hasQsuiteSuiteMarkersInText,
+  legQrNumericId,
   redactSerpUrl,
   summarizeFlightSearchForLog,
 } from "@/lib/googleFlightsSerp";
@@ -33,6 +34,42 @@ describe("findMatchingBundle", () => {
       ],
     };
     expect(findMatchingBundle(res, { first: "274", second: "934" })).toBeNull();
+  });
+
+  it("matches consecutive legs when itinerary has more than two segments", () => {
+    const res = {
+      other_flights: [
+        {
+          price: 1,
+          flights: [
+            { flight_number: "QR 274" },
+            { flight_number: "QR 999" },
+            { flight_number: "QR 934" },
+          ],
+        },
+      ],
+    };
+    expect(findMatchingBundle(res, { first: "274", second: "934" })).toBeNull();
+    const res2 = {
+      other_flights: [
+        {
+          price: 2,
+          flights: [
+            { flight_number: "QR 274" },
+            { flight_number: "QR 934" },
+            { flight_number: "QR 100" },
+          ],
+        },
+      ],
+    };
+    expect(findMatchingBundle(res2, { first: "274", second: "934" })?.price).toBe(2);
+  });
+});
+
+describe("legQrNumericId", () => {
+  it("parses QR variants", () => {
+    expect(legQrNumericId({ flight_number: "QR 274" })).toBe("274");
+    expect(legQrNumericId({ flight_number: "QR274" })).toBe("274");
   });
 });
 

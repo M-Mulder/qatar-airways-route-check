@@ -1,6 +1,7 @@
 import {
   getTrackedBundleAdults,
   getTrackedBundleLegDates,
+  getTrackedFlightNumbers,
   type TrackedFlightNums,
 } from "@/lib/trackedBundleConfig";
 
@@ -8,6 +9,8 @@ export type TrackedCabin = "ECONOMY" | "BUSINESS";
 
 export type GoogleFlightsLeg = {
   flight_number?: string;
+  /** Marketing carrier name when present (helps bare flight numbers). */
+  airline?: string;
   extensions?: string[];
 };
 
@@ -75,6 +78,18 @@ export function redactSerpUrl(url: string): string {
     });
 }
 
+/** Extract numeric flight id for Qatar-marketed legs (QR 274, QR274, sometimes with airline field). */
+export function legQrNumericId(leg: GoogleFlightsLeg): string | null {
+  const fn = (leg.flight_number || "").replace(/\s+/g, " ").trim();
+  const qr = fn.match(/\bQR\s*0*(\d+)/i);
+  if (qr) return String(parseInt(qr[1]!, 10));
+  const air = (leg.airline || "").toLowerCase();
+  if (air.includes("qatar") && /^\d{3,4}$/.test(fn.replace(/\s/g, ""))) {
+    return String(parseInt(fn.replace(/\s/g, ""), 10));
+  }
+  return null;
+}
+
 /** When QR bundle is not found, log what SerpAPI did return (first N two-leg pairs). */
 export function summarizeFlightSearchForLog(res: GoogleFlightsApiResponse): {
   searchStatus?: string;
@@ -82,6 +97,7 @@ export function summarizeFlightSearchForLog(res: GoogleFlightsApiResponse): {
   bestFlights: number;
   otherFlights: number;
   sampleLegPairs: string[];
+  bundleDebug?: { legCount: number; flightNumbers: (string | undefined)[]; price?: number }[];
   topListPrice?: number;
 } {
   const pairs: string[] = [];
@@ -91,6 +107,8 @@ export function summarizeFlightSearchForLog(res: GoogleFlightsApiResponse): {
       const fs = b.flights ?? [];
       if (fs.length >= 2) {
         pairs.push(`${fs[0]?.flight_number ?? "?"}→${fs[1]?.flight_number ?? "?"}`);
+      } else if (fs.length === 1) {
+        pairs.push(`${fs[0]?.flight_number ?? "?"} (single leg)`);
       }
     }
   };
@@ -98,12 +116,22 @@ export function summarizeFlightSearchForLog(res: GoogleFlightsApiResponse): {
   take(res.other_flights, 12);
   const firstPrice =
     res.best_flights?.[0]?.price ?? res.other_flights?.[0]?.price;
+
+  const bundleDebug = [...(res.best_flights ?? []).slice(0, 2), ...(res.other_flights ?? []).slice(0, 3)].map(
+    (b) => ({
+      legCount: b.flights?.length ?? 0,
+      flightNumbers: (b.flights ?? []).map((f) => f.flight_number),
+      price: typeof b.price === "number" ? b.price : undefined,
+    }),
+  );
+
   return {
     searchStatus: res.search_metadata?.status,
     searchId: res.search_metadata?.id,
     bestFlights: res.best_flights?.length ?? 0,
     otherFlights: res.other_flights?.length ?? 0,
     sampleLegPairs: pairs.slice(0, 16),
+    bundleDebug: bundleDebug.length ? bundleDebug : undefined,
     topListPrice: typeof firstPrice === "number" ? firstPrice : undefined,
   };
 }
@@ -131,12 +159,6 @@ function travelClassParam(cabin: TrackedCabin): string {
   return cabin === "BUSINESS" ? "3" : "1";
 }
 
-function isQrFlightNumber(leg: GoogleFlightsLeg, wantNum: string): boolean {
-  const raw = (leg.flight_number || "").trim();
-  const m = raw.match(/QR\s*(\d+)/i);
-  return m !== null && m[1] === wantNum;
-}
-
 export function findMatchingBundle(
   res: GoogleFlightsApiResponse,
   nums: TrackedFlightNums,
@@ -144,9 +166,12 @@ export function findMatchingBundle(
   const lists = [...(res.best_flights ?? []), ...(res.other_flights ?? [])];
   for (const bundle of lists) {
     const legs = bundle.flights ?? [];
-    if (legs.length !== 2) continue;
-    if (isQrFlightNumber(legs[0]!, nums.first) && isQrFlightNumber(legs[1]!, nums.second)) {
-      return bundle;
+    for (let i = 0; i < legs.length - 1; i++) {
+      const a = legQrNumericId(legs[i]!);
+      const b = legQrNumericId(legs[i + 1]!);
+      if (a === nums.first && b === nums.second) {
+        return bundle;
+      }
     }
   }
   return null;
@@ -216,25 +241,15 @@ export function qsuiteMarkersPresentForBusiness(
   return qsuiteMarkersPresentForBundle(searchBundle);
 }
 
-export async function fetchGoogleFlightsBundle(params: {
+function commonSearchParams(params: {
   apiKey: string;
   cabin: TrackedCabin;
-  legDates?: ReturnType<typeof getTrackedBundleLegDates>;
-  deepSearch?: boolean;
-}): Promise<{ json: GoogleFlightsApiResponse; urlUsed: string }> {
-  const legDates = params.legDates ?? getTrackedBundleLegDates();
+  deepSearch: boolean;
+}): URLSearchParams {
   const adults = getTrackedBundleAdults();
-
-  const multiCityJson = JSON.stringify([
-    { departure_id: "AMS", arrival_id: "DOH", date: legDates.firstLegIso },
-    { departure_id: "DOH", arrival_id: "MNL", date: legDates.secondLegIso },
-  ]);
-
-  const sp = new URLSearchParams({
+  return new URLSearchParams({
     engine: "google_flights",
     api_key: params.apiKey,
-    type: "3",
-    multi_city_json: multiCityJson,
     travel_class: travelClassParam(params.cabin),
     hl: process.env.TRACKED_BUNDLE_HL?.trim() || "nl",
     gl: process.env.TRACKED_BUNDLE_GL?.trim() || "nl",
@@ -244,17 +259,19 @@ export async function fetchGoogleFlightsBundle(params: {
     deep_search: params.deepSearch === false ? "false" : "true",
     adults: String(adults),
   });
+}
 
-  const urlUsed = `${SERP_ENDPOINT}?${sp.toString()}`;
-  logSerp("search request", {
-    cabin: params.cabin,
-    travelClass: travelClassParam(params.cabin),
-    multiCity: multiCityJson,
-    hl: sp.get("hl"),
-    gl: sp.get("gl"),
-    currency: sp.get("currency"),
-    adults: sp.get("adults"),
-    deepSearch: sp.get("deep_search"),
+async function runFlightSearchRequest(opts: {
+  cabin: TrackedCabin;
+  mode: "multi_city" | "one_way";
+  sp: URLSearchParams;
+  extraLog?: Record<string, unknown>;
+}): Promise<{ json: GoogleFlightsApiResponse; urlUsed: string; httpOk: boolean }> {
+  const urlUsed = `${SERP_ENDPOINT}?${opts.sp.toString()}`;
+  logSerp(`${opts.mode} search request`, {
+    cabin: opts.cabin,
+    travelClass: travelClassParam(opts.cabin),
+    ...opts.extraLog,
     url: redactSerpUrl(urlUsed),
   });
 
@@ -263,8 +280,8 @@ export async function fetchGoogleFlightsBundle(params: {
   const json = (await r.json()) as GoogleFlightsApiResponse;
   const ms = Date.now() - t0;
 
-  logSerp("search response", {
-    cabin: params.cabin,
+  logSerp(`${opts.mode} search response`, {
+    cabin: opts.cabin,
     httpStatus: r.status,
     ms,
     ...summarizeFlightSearchForLog(json),
@@ -278,10 +295,74 @@ export async function fetchGoogleFlightsBundle(params: {
         error: json.error || `SerpAPI HTTP ${r.status}`,
       },
       urlUsed,
+      httpOk: false,
     };
   }
+  return { json, urlUsed, httpOk: true };
+}
 
-  return { json, urlUsed };
+/**
+ * SerpAPI: multi-city JSON pins AMS→DOH and DOH→MNL dates (overnight layover).
+ * If no QR274+934 bundle is found, we fall back to **one-way** AMS→MNL on the first leg date — same as the Google Flights UI “one way with stop”, which often returns a cleaner 2-leg `flights` array.
+ */
+export async function fetchGoogleFlightsBundle(params: {
+  apiKey: string;
+  cabin: TrackedCabin;
+  legDates?: ReturnType<typeof getTrackedBundleLegDates>;
+  deepSearch?: boolean;
+}): Promise<{ json: GoogleFlightsApiResponse; urlUsed: string }> {
+  const legDates = params.legDates ?? getTrackedBundleLegDates();
+  const nums = getTrackedFlightNumbers();
+  const deep = params.deepSearch !== false;
+
+  const multiCityJson = JSON.stringify([
+    { departure_id: "AMS", arrival_id: "DOH", date: legDates.firstLegIso },
+    { departure_id: "DOH", arrival_id: "MNL", date: legDates.secondLegIso },
+  ]);
+
+  const spMulti = commonSearchParams({ apiKey: params.apiKey, cabin: params.cabin, deepSearch: deep });
+  spMulti.set("type", "3");
+  spMulti.set("multi_city_json", multiCityJson);
+
+  const first = await runFlightSearchRequest({
+    cabin: params.cabin,
+    mode: "multi_city",
+    sp: spMulti,
+    extraLog: { multiCity: multiCityJson },
+  });
+
+  const matchFirst = !first.json.error && findMatchingBundle(first.json, nums) !== null;
+  if (first.httpOk && matchFirst) {
+    return { json: first.json, urlUsed: first.urlUsed };
+  }
+
+  if (process.env.TRACKED_BUNDLE_SKIP_ONE_WAY_FALLBACK?.trim() === "1") {
+    return { json: first.json, urlUsed: first.urlUsed };
+  }
+
+  logSerp("no QR bundle on multi_city (or error); trying one_way AMS→MNL fallback", {
+    firstLegDate: legDates.firstLegIso,
+  });
+
+  const spOw = commonSearchParams({ apiKey: params.apiKey, cabin: params.cabin, deepSearch: deep });
+  spOw.set("type", "2");
+  spOw.set("departure_id", "AMS");
+  spOw.set("arrival_id", "MNL");
+  spOw.set("outbound_date", legDates.firstLegIso);
+
+  const second = await runFlightSearchRequest({
+    cabin: params.cabin,
+    mode: "one_way",
+    sp: spOw,
+    extraLog: { outbound_date: legDates.firstLegIso, departure_id: "AMS", arrival_id: "MNL" },
+  });
+
+  const matchSecond = !second.json.error && findMatchingBundle(second.json, nums) !== null;
+  if (second.httpOk && matchSecond) {
+    return { json: second.json, urlUsed: second.urlUsed };
+  }
+
+  return { json: first.json, urlUsed: first.urlUsed };
 }
 
 /**
