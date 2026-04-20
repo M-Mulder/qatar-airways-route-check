@@ -54,6 +54,7 @@ async function main() {
     const { json: bj } = await fetchGoogleFlightsBookingOptions({
       apiKey: key,
       bookingToken: bundle.booking_token,
+      cabin,
     });
     if (bj.error) {
       console.log("booking_options error:", bj.error);

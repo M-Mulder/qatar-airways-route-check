@@ -198,6 +198,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
           ({ json: bookingJson } = await fetchGoogleFlightsBookingOptions({
             apiKey: key,
             bookingToken: token,
+            cabin,
           }));
           const bErr = bookingJson.error;
           const bStatus = bookingJson.search_metadata?.status;

@@ -441,17 +441,28 @@ export async function fetchGoogleFlightsBundle(params: {
 
 /**
  * Second SerpAPI call: loads `booking_options` for the chosen itinerary (airline-direct vs OTA prices).
+ * Must repeat route + trip context (`departure_id`, `arrival_id`, `type`, `outbound_date`, `travel_class`) —
+ * SerpAPI returns 400 `Missing departure_id parameter` if only `booking_token` is sent.
  * @see https://serpapi.com/google-flights-booking-options
  */
 export async function fetchGoogleFlightsBookingOptions(params: {
   apiKey: string;
   bookingToken: string;
+  cabin: TrackedCabin;
 }): Promise<{ json: GoogleFlightsBookingApiResponse; urlUsed: string }> {
   const adults = getTrackedBundleAdults();
+  const route = getTrackedAirportRoute();
+  const legDates = getTrackedBundleLegDates();
   const sp = new URLSearchParams({
     engine: "google_flights",
     api_key: params.apiKey,
     booking_token: params.bookingToken,
+    departure_id: route.origin,
+    arrival_id: route.destination,
+    /** One-way AMS→MNL — matches our primary `fetchGoogleFlightsBundle` fallback and booking_token shape. */
+    type: "2",
+    outbound_date: legDates.firstLegIso,
+    travel_class: travelClassParam(params.cabin),
     hl: process.env.TRACKED_BUNDLE_HL?.trim() || "nl",
     gl: process.env.TRACKED_BUNDLE_GL?.trim() || "nl",
     currency: process.env.TRACKED_BUNDLE_CURRENCY?.trim() || "EUR",
@@ -461,6 +472,11 @@ export async function fetchGoogleFlightsBookingOptions(params: {
   const urlUsed = `${SERP_ENDPOINT}?${sp.toString()}`;
   logSerp("booking_options request", {
     bookingTokenLen: params.bookingToken.length,
+    departure_id: sp.get("departure_id"),
+    arrival_id: sp.get("arrival_id"),
+    type: sp.get("type"),
+    outbound_date: sp.get("outbound_date"),
+    travel_class: sp.get("travel_class"),
     hl: sp.get("hl"),
     currency: sp.get("currency"),
     adults: sp.get("adults"),
