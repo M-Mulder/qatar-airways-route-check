@@ -1,7 +1,9 @@
 import {
+  getTrackedAirportRoute,
   getTrackedBundleAdults,
   getTrackedBundleLegDates,
   getTrackedFlightNumbers,
+  type TrackedAirportRoute,
   type TrackedFlightNums,
 } from "@/lib/trackedBundleConfig";
 
@@ -11,6 +13,8 @@ export type GoogleFlightsLeg = {
   flight_number?: string;
   /** Marketing carrier name when present (helps bare flight numbers). */
   airline?: string;
+  departure_airport?: { id?: string; name?: string; time?: string };
+  arrival_airport?: { id?: string; name?: string; time?: string };
   extensions?: string[];
 };
 
@@ -21,6 +25,15 @@ export type GoogleFlightsBundle = {
   /** Use with a follow-up SerpAPI request to read `booking_options` (airline vs OTA prices). */
   booking_token?: string;
 };
+
+/** Human-readable leg list for DB/logs (e.g. `QR 274 + IB 7468`). */
+export function formatBundleFlightNumbers(bundle: GoogleFlightsBundle): string {
+  const legs = bundle.flights ?? [];
+  return legs
+    .map((l) => (l.flight_number ?? "?").replace(/\s+/g, " ").trim())
+    .filter((s) => s.length > 0)
+    .join(" + ");
+}
 
 export type GoogleFlightsApiResponse = {
   search_metadata?: { id?: string; status?: string };
@@ -177,6 +190,53 @@ export function findMatchingBundle(
   return null;
 }
 
+function legAirportPair(leg: GoogleFlightsLeg): { dep?: string; arr?: string } {
+  const dep = leg.departure_airport?.id?.trim().toUpperCase();
+  const arr = leg.arrival_airport?.id?.trim().toUpperCase();
+  return { dep: dep || undefined, arr: arr || undefined };
+}
+
+/**
+ * Match the same itinerary Google Flights shows as “AMS → DOH → MNL” even when the second segment
+ * is a codeshare (e.g. Iberia flight number) and not `QR {second}` — SerpAPI still exposes IATA ids per leg.
+ */
+export function findMatchingBundleByRoute(
+  res: GoogleFlightsApiResponse,
+  route: TrackedAirportRoute,
+): GoogleFlightsBundle | null {
+  const o = route.origin;
+  const h = route.hub;
+  const dest = route.destination;
+  const lists = [...(res.best_flights ?? []), ...(res.other_flights ?? [])];
+  for (const bundle of lists) {
+    const legs = bundle.flights ?? [];
+    for (let i = 0; i < legs.length - 1; i++) {
+      const a = legAirportPair(legs[i]!);
+      const b = legAirportPair(legs[i + 1]!);
+      if (a.dep === o && a.arr === h && b.dep === h && b.arr === dest) {
+        return bundle;
+      }
+    }
+  }
+  return null;
+}
+
+export type TrackedBundleMatchKind = "flight_numbers" | "route";
+
+/** Prefer exact QR flight numbers; optionally fall back to AMS→DOH→MNL by airport ids (codeshare-friendly). */
+export function resolveTrackedBundle(
+  res: GoogleFlightsApiResponse,
+  nums: TrackedFlightNums,
+  route: TrackedAirportRoute,
+): { bundle: GoogleFlightsBundle; kind: TrackedBundleMatchKind } | null {
+  const exact = findMatchingBundle(res, nums);
+  if (exact) return { bundle: exact, kind: "flight_numbers" };
+  if (process.env.TRACKED_BUNDLE_SKIP_ROUTE_FALLBACK?.trim() === "1") return null;
+  const byRoute = findMatchingBundleByRoute(res, route);
+  if (byRoute) return { bundle: byRoute, kind: "route" };
+  return null;
+}
+
 function pickPriceInCurrency(together: BookingOptionTogether, currency: string): number | null {
   const cu = currency.trim().toUpperCase();
   const locals = together.local_prices ?? [];
@@ -213,7 +273,10 @@ export function extractOfficialAirlineDirectPrice(
   return candidates.reduce((a, b) => (a.price <= b.price ? a : b));
 }
 
-/** Dutch UI copy from Google Flights NL; keep English variants for robustness. */
+/**
+ * Dutch / English amenity strings from Google Flights (SerpAPI `flights[].extensions`).
+ * Business itineraries often include `"Individual suite"` (EN) or `"Individuele suite"` (NL) when Qsuite is listed.
+ */
 export function hasQsuiteSuiteMarkersInText(text: string): boolean {
   const t = text.toLowerCase();
   return (
@@ -247,7 +310,7 @@ function commonSearchParams(params: {
   deepSearch: boolean;
 }): URLSearchParams {
   const adults = getTrackedBundleAdults();
-  return new URLSearchParams({
+  const sp = new URLSearchParams({
     engine: "google_flights",
     api_key: params.apiKey,
     travel_class: travelClassParam(params.cabin),
@@ -259,6 +322,11 @@ function commonSearchParams(params: {
     deep_search: params.deepSearch === false ? "false" : "true",
     adults: String(adults),
   });
+  // Same as Google Flights “View more flights” — needed for long-DOH options (e.g. QR274+QR934, 18h30 layover).
+  if (process.env.TRACKED_BUNDLE_SHOW_HIDDEN?.trim() !== "0") {
+    sp.set("show_hidden", "true");
+  }
+  return sp;
 }
 
 async function runFlightSearchRequest(opts: {
@@ -313,6 +381,7 @@ export async function fetchGoogleFlightsBundle(params: {
 }): Promise<{ json: GoogleFlightsApiResponse; urlUsed: string }> {
   const legDates = params.legDates ?? getTrackedBundleLegDates();
   const nums = getTrackedFlightNumbers();
+  const route = getTrackedAirportRoute();
   const deep = params.deepSearch !== false;
 
   const multiCityJson = JSON.stringify([
@@ -331,7 +400,7 @@ export async function fetchGoogleFlightsBundle(params: {
     extraLog: { multiCity: multiCityJson },
   });
 
-  const matchFirst = !first.json.error && findMatchingBundle(first.json, nums) !== null;
+  const matchFirst = !first.json.error && resolveTrackedBundle(first.json, nums, route) !== null;
   if (first.httpOk && matchFirst) {
     return { json: first.json, urlUsed: first.urlUsed };
   }
@@ -357,8 +426,13 @@ export async function fetchGoogleFlightsBundle(params: {
     extraLog: { outbound_date: legDates.firstLegIso, departure_id: "AMS", arrival_id: "MNL" },
   });
 
-  const matchSecond = !second.json.error && findMatchingBundle(second.json, nums) !== null;
+  const matchSecond = !second.json.error && resolveTrackedBundle(second.json, nums, route) !== null;
   if (second.httpOk && matchSecond) {
+    return { json: second.json, urlUsed: second.urlUsed };
+  }
+
+  // Prefer one-way JSON when we fetched it: two-leg rows + same shape as the Google Flights UI for AMS→MNL.
+  if (second.httpOk) {
     return { json: second.json, urlUsed: second.urlUsed };
   }
 

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   extractOfficialAirlineDirectPrice,
   findMatchingBundle,
+  findMatchingBundleByRoute,
+  formatBundleFlightNumbers,
   hasQsuiteSuiteMarkersInText,
   legQrNumericId,
   redactSerpUrl,
+  resolveTrackedBundle,
   summarizeFlightSearchForLog,
 } from "@/lib/googleFlightsSerp";
 
@@ -66,6 +69,76 @@ describe("findMatchingBundle", () => {
   });
 });
 
+describe("findMatchingBundleByRoute", () => {
+  const route = { origin: "AMS", hub: "DOH", destination: "MNL" };
+
+  it("finds two-leg AMS→DOH→MNL even when second leg is not QR934 (codeshare)", () => {
+    const res = {
+      other_flights: [
+        {
+          price: 5590,
+          booking_token: "tok",
+          flights: [
+            {
+              flight_number: "QR 274",
+              departure_airport: { id: "AMS" },
+              arrival_airport: { id: "DOH" },
+            },
+            {
+              flight_number: "IB 7468",
+              departure_airport: { id: "DOH" },
+              arrival_airport: { id: "MNL" },
+            },
+          ],
+        },
+      ],
+    };
+    const b = findMatchingBundleByRoute(res, route);
+    expect(b?.price).toBe(5590);
+    expect(findMatchingBundle(res, { first: "274", second: "934" })).toBeNull();
+  });
+});
+
+describe("resolveTrackedBundle", () => {
+  it("prefers flight-number match, else route", () => {
+    const route = { origin: "AMS", hub: "DOH", destination: "MNL" };
+    const nums = { first: "274", second: "934" };
+    const exactRes = {
+      best_flights: [
+        {
+          flights: [
+            { flight_number: "QR 274" },
+            { flight_number: "QR 934" },
+          ],
+        },
+      ],
+    };
+    expect(resolveTrackedBundle(exactRes, nums, route)?.kind).toBe("flight_numbers");
+
+    const routeOnly = {
+      other_flights: [
+        {
+          flights: [
+            { flight_number: "QR 274", departure_airport: { id: "AMS" }, arrival_airport: { id: "DOH" } },
+            { flight_number: "IB 1", departure_airport: { id: "DOH" }, arrival_airport: { id: "MNL" } },
+          ],
+        },
+      ],
+    };
+    expect(resolveTrackedBundle(routeOnly, nums, route)?.kind).toBe("route");
+  });
+});
+
+describe("formatBundleFlightNumbers", () => {
+  it("joins leg flight numbers", () => {
+    expect(
+      formatBundleFlightNumbers({
+        flights: [{ flight_number: "QR 274" }, { flight_number: "IB 7468" }],
+      }),
+    ).toBe("QR 274 + IB 7468");
+  });
+});
+
 describe("legQrNumericId", () => {
   it("parses QR variants", () => {
     expect(legQrNumericId({ flight_number: "QR 274" })).toBe("274");
@@ -76,6 +149,10 @@ describe("legQrNumericId", () => {
 describe("hasQsuiteSuiteMarkersInText", () => {
   it("detects Dutch suite copy", () => {
     expect(hasQsuiteSuiteMarkersInText('something "Individuele suite"')).toBe(true);
+  });
+
+  it("detects English Individual suite from SerpAPI extensions", () => {
+    expect(hasQsuiteSuiteMarkersInText('["Individual suite","Free Wi-Fi"]')).toBe(true);
   });
 });
 

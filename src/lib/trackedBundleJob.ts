@@ -2,8 +2,9 @@ import {
   extractOfficialAirlineDirectPrice,
   fetchGoogleFlightsBookingOptions,
   fetchGoogleFlightsBundle,
-  findMatchingBundle,
+  formatBundleFlightNumbers,
   qsuiteMarkersPresentForBusiness,
+  resolveTrackedBundle,
   summarizeBookingOptionsForLog,
   summarizeFlightSearchForLog,
   type GoogleFlightsBookingApiResponse,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/googleFlightsSerp";
 import { getPrisma } from "@/lib/prisma";
 import {
+  getTrackedAirportRoute,
   getTrackedBundleAdults,
   getTrackedBundleLegDates,
   getTrackedFlightNumbers,
@@ -63,6 +65,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
 
   const legDates = getTrackedBundleLegDates();
   const nums = getTrackedFlightNumbers();
+  const route = getTrackedAirportRoute();
   const adults = getTrackedBundleAdults();
   const bundleFirstLegDate = new Date(`${legDates.firstLegIso}T12:00:00.000Z`);
   const currency = process.env.TRACKED_BUNDLE_CURRENCY?.trim() || "EUR";
@@ -73,7 +76,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
     firstLeg: legDates.firstLegIso,
     secondLeg: legDates.secondLegIso,
     bundleFirstLegDate: bundleFirstLegDate.toISOString().slice(0, 10),
-    flights: `QR${nums.first}+QR${nums.second}`,
+    flights: `QR${nums.first}+QR${nums.second} or ${route.origin}→${route.hub}→${route.destination}`,
     adults,
     currency,
     officialSeller,
@@ -159,16 +162,23 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       continue;
     }
 
-    const bundle = findMatchingBundle(json, nums);
+    const resolved = resolveTrackedBundle(json, nums, route);
+    const bundle = resolved?.bundle ?? null;
     const matched = bundle !== null;
     logPricing(`cabin ${cabin}: search ok`, {
       matched,
+      matchKind: resolved?.kind ?? null,
       serpId: json.search_metadata?.id,
       hasBookingToken: Boolean(bundle?.booking_token),
       bundleListPrice: typeof bundle?.price === "number" ? bundle.price : null,
     });
+    if (matched && resolved?.kind === "route") {
+      logPricing(`cabin ${cabin}: matched by airport route (second leg may be codeshare / not QR${nums.second})`, {
+        legs: bundle ? formatBundleFlightNumbers(bundle) : null,
+      });
+    }
     if (!matched) {
-      logPricing(`cabin ${cabin}: no QR${nums.first}+QR${nums.second} bundle — SerpAPI itinerary sample`, {
+      logPricing(`cabin ${cabin}: no bundle (flight numbers or ${route.origin}→${route.hub}→${route.destination}) — SerpAPI sample`, {
         ...summarizeFlightSearchForLog(json),
       });
     }
@@ -228,7 +238,9 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
         ? qsuiteMarkersPresentForBusiness(cabin, bookingJson, bundle)
         : null;
 
-    const baseErr = matched ? null : `No QR${nums.first}+QR${nums.second} itinerary in SerpAPI results`;
+    const baseErr = matched
+      ? null
+      : `No itinerary matching QR${nums.first}+QR${nums.second} or ${route.origin}→${route.hub}→${route.destination} in SerpAPI results`;
     const error = [baseErr, detailError].filter(Boolean).join(" ") || null;
 
     const row: TrackedBundleCabinResult = {
@@ -238,7 +250,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       priceTotal,
       currency,
       qsuiteIndicatorsPresent,
-      flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
+      flightNumbersSummary: matched && bundle ? formatBundleFlightNumbers(bundle) : null,
       error,
       serpSearchId: json.search_metadata?.id ?? null,
     };
@@ -250,7 +262,7 @@ export async function runTrackedBundlePriceSnapshots(): Promise<{
       currency,
       matchedBundle: matched,
       qsuiteIndicatorsPresent,
-      flightNumbersSummary: matched ? `QR${nums.first}+QR${nums.second}` : null,
+      flightNumbersSummary: matched && bundle ? formatBundleFlightNumbers(bundle) : null,
       error,
       serpSearchId: json.search_metadata?.id ?? null,
     });

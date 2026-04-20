@@ -14,6 +14,19 @@ export type TrackedBundleLegDates = {
 
 export type TrackedFlightNums = { first: string; second: string };
 
+/** IATA city/airport chain for the tracked one-ticket trip (default AMS → DOH → MNL). */
+export type TrackedAirportRoute = { origin: string; hub: string; destination: string };
+
+export function getTrackedAirportRoute(): TrackedAirportRoute {
+  const o = process.env.TRACKED_BUNDLE_ORIGIN?.trim().toUpperCase();
+  const h = process.env.TRACKED_BUNDLE_HUB?.trim().toUpperCase();
+  const d = process.env.TRACKED_BUNDLE_DEST?.trim().toUpperCase();
+  if (o && h && d && /^[A-Z]{3}$/.test(o) && /^[A-Z]{3}$/.test(h) && /^[A-Z]{3}$/.test(d)) {
+    return { origin: o, hub: h, destination: d };
+  }
+  return { origin: "AMS", hub: "DOH", destination: "MNL" };
+}
+
 export function getTrackedBundleLegDates(): TrackedBundleLegDates {
   const first =
     process.env.TRACKED_BUNDLE_FIRST_LEG_DATE?.trim() || process.env.TRACKED_BUNDLE_OUTBOUND_DATE?.trim();

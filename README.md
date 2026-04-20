@@ -56,6 +56,7 @@ Optional: keep a personal Vercel checklist in `VERCEL_SETUP.local.md` at the rep
 | `TRACKED_OFFICIAL_BOOK_WITH` | Optional; default `Qatar Airways`. After each search, a second SerpAPI call loads **booking options**; we store the price only for **`together.airline: true`** and this seller name (not OTAs like BudgetAir). |
 | `TRACKED_BUNDLE_ADULTS` | Optional; default **2**. SerpAPI `adults` — stored prices are the **total for all adults** in that currency. |
 | `PRICING_VERBOSE` | Optional; set to **`0`** to silence detailed **`[pricing:serp]`** request/response logs (timings, booking-option rows). **`[pricing]`** job logs stay on. |
+| `TRACKED_BUNDLE_SKIP_ONE_WAY_FALLBACK` | Optional; set to **`1`** to disable the second SerpAPI call (**one-way** AMS→MNL on the first leg date) when **multi-city** JSON does not return a matching QR274+934 bundle. |
 | `AIRFLEETS_PLAYWRIGHT_GOOGLE_ENTRY` | Optional `1` / `true`: before Airfleets, Playwright runs a **Google** search for **`{registration} Airfleets`** and clicks the first `airfleets.net` link; if it lands on a **`ficheapp/plane-`** page, the Airfleets search step is skipped. **Off by default** (Google often blocks or CAPTCHAs serverless IPs; automated use of Google may conflict with their terms). Similar motivation to open-source tools like [web-agent-master/google-search](https://github.com/web-agent-master/google-search), but we do not bundle that project. |
 
 ## Planned segments (database)

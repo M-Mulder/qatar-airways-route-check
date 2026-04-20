@@ -32,7 +32,8 @@ export async function QsuitePriceAlertBar() {
       <span className="mx-2 opacity-90">—</span>
       <span className="opacity-95">
         The latest Google Flights (SerpAPI) result for this tracked business bundle no longer lists the suite
-        amenity (e.g. &quot;Individuele suite&quot;). Verify the booking before relying on Qsuite.
+        amenity (e.g. &quot;Individual suite&quot; / &quot;Individuele suite&quot;). Verify the booking before relying on
+        Qsuite.
       </span>
       {when ? (
         <span className="mt-1 block text-xs font-normal opacity-90">Last check (UTC): {when}</span>
