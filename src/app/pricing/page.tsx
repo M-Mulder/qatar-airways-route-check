@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   getTrackedBundleAdults,
   getTrackedBundleLegDates,
@@ -74,21 +73,10 @@ export default async function PricingPage() {
           <span className="text-[var(--ops-fg)]">
             AMS→DOH ({legs.firstLegIso}, QR{nums.first}) then DOH→MNL ({legs.secondLegIso}, QR{nums.second})
           </span>
-          . Prices come from Google Flights <span className="text-[var(--ops-fg)]">booking options</span> for the{" "}
-          <span className="text-[var(--ops-fg)]">airline-direct</span> seller (default{" "}
-          <span className="text-[var(--ops-fg)]">Qatar Airways</span>), not third-party sites such as BudgetAir or
-          Booking.com. Amounts are{" "}
+          . Stored prices are the airline-direct total from Google Flights booking options (
           <span className="text-[var(--ops-fg)]">
-            total for {adults} adult{adults === 1 ? "" : "s"}
-          </span>{" "}
-          in <span className="text-[var(--ops-fg)]">EUR</span> (see{" "}
-          <code className="text-[var(--ops-cyan)]">TRACKED_BUNDLE_CURRENCY</code>).
-        </p>
-        <p className="mt-2 text-sm text-[var(--ops-subtle)]">
-          Cron runs with the compare job at <span className="text-[var(--ops-fg)]">17:30 UTC</span> (
-          <Link className="text-[var(--ops-cyan)] underline-offset-2 hover:underline" href="/compare">
-            /api/cron/compare
-          </Link>
+            {adults} adult{adults === 1 ? "" : "s"}, EUR
+          </span>
           ).
         </p>
       </div>
