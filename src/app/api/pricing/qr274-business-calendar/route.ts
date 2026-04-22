@@ -8,6 +8,41 @@ export const maxDuration = 120;
 type Payload = Awaited<ReturnType<typeof fetchQr274BusinessCalendarMonth>>;
 type CacheEntry = { createdAtMs: number; payload: Payload };
 
+function clampInt(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function hash01(s: string): number {
+  // Deterministic, fast, good enough for mock data.
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return ((h >>> 0) % 10_000) / 10_000;
+}
+
+function businessFullnessPct(params: { dateIso: string; avios: number | null }): number {
+  const dt = new Date(`${params.dateIso}T12:00:00.000Z`);
+  const dow = dt.getUTCDay(); // 0 Sun .. 6 Sat
+  const jitter = (hash01(`qr274:${params.dateIso}`) - 0.5) * 10; // +/-5
+
+  // Plausible seasonal pattern for May: weekends fuller, midweek lighter.
+  let base = 62;
+  if (dow === 5) base += 10; // Fri
+  if (dow === 6) base += 14; // Sat
+  if (dow === 0) base += 16; // Sun
+  if (dow === 1) base += 6; // Mon
+  if (dow === 2 || dow === 3) base -= 6; // Tue/Wed
+  if (dow === 4) base -= 2; // Thu
+
+  // Tie mock award tier to demand slightly.
+  if (params.avios === 86000) base += 8;
+  if (params.avios === 43000) base -= 3;
+
+  return clampInt(base + jitter, 35, 98);
+}
+
 declare global {
   // eslint-disable-next-line no-var
   var __qr274CalendarCache: Map<string, CacheEntry> | undefined;
@@ -76,6 +111,11 @@ export async function GET(req: Request) {
       }
     }
   } catch {}
+
+  // Mock Business cabin fullness (May-friendly pattern). API-level so it stays consistent on reload.
+  for (const d of payload.prices) {
+    (d as any).businessFullnessPct = businessFullnessPct({ dateIso: d.date, avios: (d as any).avios ?? null });
+  }
 
   cache().set(cacheKey, { createdAtMs: Date.now(), payload });
   return NextResponse.json({ ok: true, cached: false, ...payload }, { status: 200 });

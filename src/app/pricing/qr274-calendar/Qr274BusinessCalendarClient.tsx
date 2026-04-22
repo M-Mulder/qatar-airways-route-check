@@ -8,6 +8,7 @@ type ApiDay = {
   currency: string;
   price: number | null;
   avios?: number | null;
+  businessFullnessPct?: number | null;
   source: "airline_direct" | "list" | "missing";
   error: string | null;
 };
@@ -90,6 +91,7 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d] as const)), [days]);
   const selectedDay = selected ? byDate.get(selected) ?? null : null;
   const hoveredDay = hovered ? byDate.get(hovered) ?? null : null;
+  const hoverFocus = hoveredDay ?? selectedDay;
 
   return (
     <div className="grid gap-6 md:grid-cols-[1fr_320px]">
@@ -193,11 +195,15 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
         </p>
 
         <div className="mt-4 rounded-lg border border-[var(--ops-line)] bg-[color-mix(in_oklab,var(--ops-card),black_2%)] p-3">
-          {(hoveredDay ?? selectedDay) ? (
+          {hoverFocus ? (
             <>
               {(() => {
-                const d = (hoveredDay ?? selectedDay)!;
+                const d = hoverFocus!;
                 const av = typeof (d as any).avios === "number" ? (d as any).avios : null;
+                const fullness =
+                  typeof (d as any).businessFullnessPct === "number" ? (d as any).businessFullnessPct : null;
+                const fullnessLabel =
+                  fullness == null ? "—" : fullness >= 85 ? "Very high" : fullness >= 72 ? "High" : fullness >= 58 ? "Medium" : "Low";
                 return (
                   <>
                     <div className="text-sm font-semibold text-[var(--ops-fg)]">{d.date}</div>
@@ -206,6 +212,27 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
                     </div>
                     <div className="mt-1 text-sm font-semibold text-[var(--ops-fg)]">
                       {av == null ? "No AVIOS price" : `${av.toLocaleString()} AVIOS`}
+                    </div>
+                    <div className="mt-3">
+                      <div className="flex items-center justify-between text-xs text-[var(--ops-muted)]">
+                        <span>Business fullness</span>
+                        <span className="text-[var(--ops-fg)]">
+                          {fullness == null ? "—" : `${fullness}%`} · {fullnessLabel}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-2 w-full overflow-hidden rounded-full border border-[var(--ops-line)] bg-[color-mix(in_oklab,var(--ops-card),black_8%)]">
+                        <div
+                          className={clsx(
+                            "h-full",
+                            fullness != null && fullness >= 85 && "bg-rose-400/70",
+                            fullness != null && fullness < 85 && fullness >= 72 && "bg-amber-300/70",
+                            fullness != null && fullness < 72 && fullness >= 58 && "bg-sky-300/70",
+                            fullness != null && fullness < 58 && "bg-emerald-300/70",
+                            fullness == null && "bg-[var(--ops-line)]",
+                          )}
+                          style={{ width: `${Math.max(0, Math.min(100, fullness ?? 0))}%` }}
+                        />
+                      </div>
                     </div>
                     {d.error ? <div className="mt-2 text-xs text-[var(--ops-rose)]">{d.error}</div> : null}
                   </>
