@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { fetchQr274BusinessCalendarMonth } from "@/lib/qr274Calendar";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -86,7 +85,6 @@ export async function POST(req: Request) {
   if (days.length === 0) return jsonError(400, "No days for given month");
 
   const currency = (searchParams.get("currency") || "EUR").trim().toUpperCase();
-  const key = process.env.SERPAPI_KEY?.trim() || "";
 
   const flight = "QR274";
   const origin = "AMS";
@@ -94,23 +92,10 @@ export async function POST(req: Request) {
   const cabin = "BUSINESS";
   const program = "AVIOS";
 
-  const cashByDay = new Map<string, { price: number | null; source: string }>();
-  if (key) {
-    try {
-      const cal = await fetchQr274BusinessCalendarMonth({ apiKey: key, monthIso: month, currency, adults: 1, concurrency: 3 });
-      for (const d of cal.prices) {
-        cashByDay.set(d.date, { price: d.price ?? null, source: d.source });
-      }
-    } catch {
-      // Fall back to seeding without cash (still useful for UI).
-    }
-  }
-
   let upserts = 0;
   for (const iso of days) {
     const date = new Date(`${iso}T12:00:00.000Z`);
     const avios = mockAvios(iso);
-    const cash = cashByDay.get(iso)?.price ?? null;
     const fullness = businessFullnessPct({ dateIso: iso, avios });
     await prisma.awardPriceSnapshot.upsert({
       where: { flight_origin_destination_cabin_date_program: { flight, origin, destination, cabin, date, program } },
@@ -119,8 +104,8 @@ export async function POST(req: Request) {
     });
     await prisma.qr274CalendarDaySnapshot.upsert({
       where: { date_currency: { date, currency } },
-      create: { date, currency, cashPrice: cash ?? undefined, avios, businessFullnessPct: fullness },
-      update: { observedAt: new Date(), cashPrice: cash ?? undefined, avios, businessFullnessPct: fullness },
+      create: { date, currency, cashPrice: null, avios, businessFullnessPct: fullness },
+      update: { observedAt: new Date(), avios, businessFullnessPct: fullness },
     });
     upserts++;
   }

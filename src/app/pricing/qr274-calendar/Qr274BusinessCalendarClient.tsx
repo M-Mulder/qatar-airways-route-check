@@ -104,7 +104,7 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
             </h2>
             <p className="mt-2 text-sm text-[var(--ops-muted)]">
               {state.loading
-                ? "Loading live prices…"
+                ? "Loading prices…"
                 : `Best days are highlighted (top 3). Currency: ${currency}. Distinct prices: ${best.distinct || 0}.`}
             </p>
           </div>
@@ -118,7 +118,7 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
               onClick={() => setRefreshTick((n) => n + 1)}
               className="mt-2 rounded-lg border border-[var(--ops-line)] bg-[var(--ops-card)] px-2 py-1 text-xs text-[var(--ops-fg)] hover:bg-[color-mix(in_oklab,var(--ops-card),black_6%)]"
             >
-              Refresh live prices
+              Refresh prices
             </button>
           </div>
         </div>
