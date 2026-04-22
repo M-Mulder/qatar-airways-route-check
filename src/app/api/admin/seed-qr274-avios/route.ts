@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { fetchQr274BusinessCalendarMonth } from "@/lib/qr274Calendar";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -44,6 +45,29 @@ function mockAvios(dateIso: string): number {
   return hash01(`avios:${dateIso}`) < 0.6 ? 43000 : 86000;
 }
 
+function clampInt(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+
+function businessFullnessPct(params: { dateIso: string; avios: number | null }): number {
+  const dt = new Date(`${params.dateIso}T12:00:00.000Z`);
+  const dow = dt.getUTCDay(); // 0 Sun .. 6 Sat
+  const jitter = (hash01(`qr274:${params.dateIso}`) - 0.5) * 10; // +/-5
+
+  let base = 62;
+  if (dow === 5) base += 10; // Fri
+  if (dow === 6) base += 14; // Sat
+  if (dow === 0) base += 16; // Sun
+  if (dow === 1) base += 6; // Mon
+  if (dow === 2 || dow === 3) base -= 6; // Tue/Wed
+  if (dow === 4) base -= 2; // Thu
+
+  if (params.avios === 86000) base += 8;
+  if (params.avios === 43000) base -= 3;
+
+  return clampInt(base + jitter, 35, 98);
+}
+
 export async function POST(req: Request) {
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) return jsonError(500, "CRON_SECRET not set");
@@ -61,20 +85,42 @@ export async function POST(req: Request) {
   const days = daysInMonthIso(month);
   if (days.length === 0) return jsonError(400, "No days for given month");
 
+  const currency = (searchParams.get("currency") || "EUR").trim().toUpperCase();
+  const key = process.env.SERPAPI_KEY?.trim() || "";
+
   const flight = "QR274";
   const origin = "AMS";
   const destination = "DOH";
   const cabin = "BUSINESS";
   const program = "AVIOS";
 
+  const cashByDay = new Map<string, { price: number | null; source: string }>();
+  if (key) {
+    try {
+      const cal = await fetchQr274BusinessCalendarMonth({ apiKey: key, monthIso: month, currency, adults: 1, concurrency: 3 });
+      for (const d of cal.prices) {
+        cashByDay.set(d.date, { price: d.price ?? null, source: d.source });
+      }
+    } catch {
+      // Fall back to seeding without cash (still useful for UI).
+    }
+  }
+
   let upserts = 0;
   for (const iso of days) {
     const date = new Date(`${iso}T12:00:00.000Z`);
     const avios = mockAvios(iso);
+    const cash = cashByDay.get(iso)?.price ?? null;
+    const fullness = businessFullnessPct({ dateIso: iso, avios });
     await prisma.awardPriceSnapshot.upsert({
       where: { flight_origin_destination_cabin_date_program: { flight, origin, destination, cabin, date, program } },
       create: { flight, origin, destination, cabin, date, program, avios },
       update: { avios, observedAt: new Date() },
+    });
+    await prisma.qr274CalendarDaySnapshot.upsert({
+      where: { date_currency: { date, currency } },
+      create: { date, currency, cashPrice: cash ?? undefined, avios, businessFullnessPct: fullness },
+      update: { observedAt: new Date(), cashPrice: cash ?? undefined, avios, businessFullnessPct: fullness },
     });
     upserts++;
   }

@@ -96,3 +96,17 @@ model AwardPriceSnapshot {
   @@unique([flight, origin, destination, cabin, date, program])
   @@index([date])
 }
+
+/// Persisted calendar day data for QR274 (cash + AVIOS + fullness) so the UI can render from Postgres.
+model Qr274CalendarDaySnapshot {
+  id                  String   @id @default(cuid())
+  observedAt           DateTime @default(now())
+  date                DateTime @db.Date
+  currency             String   @default("EUR")
+  cashPrice            Int?
+  avios                Int?
+  businessFullnessPct  Int?
+
+  @@unique([date, currency])
+  @@index([date])
+}
