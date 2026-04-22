@@ -20,6 +20,7 @@
     "db:migrate": "node scripts/prisma-with-env.mjs migrate deploy",
     "db:push": "prisma db push",
     "db:seed-mock": "node scripts/seed-mock.mjs",
+    "db:seed-award-mock": "node scripts/seed-award-mock.mjs",
     "db:apply-planned-migration": "node scripts/db-sql.mjs prisma/migrations/20260416183000_planned_segment/migration.sql",
     "db:apply-compare-equipment-migration": "node scripts/db-sql.mjs prisma/migrations/20260417120000_daily_compare_equipment/migration.sql",
     "db:apply-airfleets-migration": "node scripts/db-sql.mjs prisma/migrations/20260418180000_airfleets_payload/migration.sql",

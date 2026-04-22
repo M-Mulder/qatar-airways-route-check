@@ -80,3 +80,19 @@ model TrackedBundlePriceSnapshot {
 
   @@index([bundleFirstLegDate, cabin, observedAt])
 }
+
+/// Mock award pricing for a specific flight/date (demo-only for UI).
+model AwardPriceSnapshot {
+  id         String   @id @default(cuid())
+  observedAt DateTime @default(now())
+  flight     String
+  origin     String
+  destination String
+  cabin      String
+  date       DateTime @db.Date
+  program    String   @default("AVIOS")
+  avios      Int
+
+  @@unique([flight, origin, destination, cabin, date, program])
+  @@index([date])
+}

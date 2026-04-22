@@ -5,6 +5,7 @@ import {
 } from "@/lib/trackedBundleConfig";
 import { getPrisma, hasDatabaseUrl } from "@/lib/prisma";
 import { PricingChart, type PricingChartRow } from "./PricingChart";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,14 @@ export default async function PricingPage() {
           </span>
           ).
         </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link
+            href="/pricing/qr274-calendar"
+            className="rounded-lg border border-[var(--ops-line)] bg-[var(--ops-card)] px-3 py-2 text-sm text-[var(--ops-fg)] hover:bg-[color-mix(in_oklab,var(--ops-card),black_6%)]"
+          >
+            QR274 business calendar (next month)
+          </Link>
+        </div>
       </div>
 
       <div className="rounded-xl border border-[var(--ops-line)] bg-[var(--ops-card)] p-4 shadow-[var(--ops-shadow)] md:p-6">
