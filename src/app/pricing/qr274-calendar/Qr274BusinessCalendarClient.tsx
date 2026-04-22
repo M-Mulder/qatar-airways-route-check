@@ -179,9 +179,7 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
                 <div className="mt-3 text-base font-semibold text-[var(--ops-fg)]">
                   {price == null ? "—" : fmtMoney(price, currency)}
                 </div>
-                <div className="mt-1 text-xs text-[var(--ops-muted)]">
-                  {d?.source === "airline_direct" ? "Airline-direct" : d?.source === "list" ? "List price" : "No price"}
-                </div>
+                <div className="mt-1 text-xs text-[var(--ops-muted)]">{price == null ? "No cash price" : "Cash price"}</div>
               </button>
             );
           })}
@@ -209,9 +207,6 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
                     <div className="mt-1 text-sm font-semibold text-[var(--ops-fg)]">
                       {av == null ? "No AVIOS price" : `${av.toLocaleString()} AVIOS`}
                     </div>
-                    <div className="mt-2 text-xs text-[var(--ops-muted)]">
-                      Source: <span className="text-[var(--ops-fg)]">{d.source}</span>
-                    </div>
                     {d.error ? <div className="mt-2 text-xs text-[var(--ops-rose)]">{d.error}</div> : null}
                   </>
                 );
@@ -225,9 +220,8 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
         <div className="mt-6 text-xs text-[var(--ops-muted)]">
           Notes:
           <ul className="mt-2 list-disc pl-5">
-            <li>“Airline” uses SerpAPI booking options to pick the airline-direct price.</li>
-            <li>“List” is the Google Flights list price when airline-direct rows aren’t available.</li>
-            <li>AVIOS is mock demo data (43k/86k) stored in Postgres.</li>
+            <li>Cash prices come from Google Flights via SerpAPI.</li>
+            <li>AVIOS prices are stored in Postgres (seeded as 43k/86k for now).</li>
           </ul>
         </div>
       </div>

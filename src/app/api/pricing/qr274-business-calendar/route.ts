@@ -51,7 +51,7 @@ export async function GET(req: Request) {
     concurrency: 3,
   });
 
-  // Merge demo AVIOS from DB when available.
+  // Merge AVIOS from DB when available.
   try {
     if (hasDatabaseUrl()) {
       const prisma = getPrisma();
@@ -75,9 +75,7 @@ export async function GET(req: Request) {
         }
       }
     }
-  } catch {
-    // Demo-only; ignore award DB errors.
-  }
+  } catch {}
 
   cache().set(cacheKey, { createdAtMs: Date.now(), payload });
   return NextResponse.json({ ok: true, cached: false, ...payload }, { status: 200 });
