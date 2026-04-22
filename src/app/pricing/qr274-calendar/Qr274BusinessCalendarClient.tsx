@@ -181,7 +181,7 @@ export function Qr274BusinessCalendarClient(props: { monthIso: string }) {
                 <div className="mt-3 text-base font-semibold text-[var(--ops-fg)]">
                   {price == null ? "—" : fmtMoney(price, currency)}
                 </div>
-                <div className="mt-1 text-xs text-[var(--ops-muted)]">{price == null ? "No cash price" : "Cash price"}</div>
+                {price == null ? <div className="mt-1 text-xs text-[var(--ops-muted)]">No price</div> : <div className="mt-1 h-[1em]" />}
               </button>
             );
           })}
