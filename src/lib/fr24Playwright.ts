@@ -12,10 +12,21 @@ function isVercel(): boolean {
   return process.env.VERCEL === "1" || process.env.VERCEL === "true";
 }
 
-/** Default on: set `FR24_PLAYWRIGHT=0` to disable (saves cold-start time if Serper always works). */
+/**
+ * FR24 Playwright uses headless Chromium. That is **disabled by default on Vercel** — serverless + bundled
+ * Chromium (`@sparticuz/chromium`) is memory‑ and quota‑fragile next to Airfleets Playwright and often yields
+ * `browserContext.newPage` style failures at runtime. Production FR24 relies on **`SERPER_API_KEY`** scrape (same as
+ * locally when Serper is set). Keep Playwright **on** for dev machines so local `cron:local` / `compare:day`
+ * survives FR24 plain HTTP 403 without Serper.
+ *
+ * Override: `FR24_PLAYWRIGHT=1` enables headless FR24 on Vercel (unsupported / may still fail).
+ * Override: `FR24_PLAYWRIGHT=0` disables everywhere.
+ */
 export function fr24PlaywrightFallbackEnabled(): boolean {
   const v = (process.env.FR24_PLAYWRIGHT ?? "").trim().toLowerCase();
+  if (v === "1" || v === "true") return true;
   if (v === "0" || v === "false") return false;
+  if (isVercel()) return false;
   return true;
 }
 
