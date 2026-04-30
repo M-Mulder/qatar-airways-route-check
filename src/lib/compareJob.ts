@@ -2,7 +2,11 @@ import { Prisma } from "@/generated/prisma";
 import { fetchAirfleetsForRegistration, type AirfleetsPayload } from "@/lib/airfleets";
 import { getPrisma } from "@/lib/prisma";
 import type { SegmentDef } from "@/lib/config";
-import { fetchFr24FlightHistoryHtml, findFr24RowForDay, parseFr24FlightHistoryHtml } from "@/lib/fr24FlightHistory";
+import {
+  fetchFr24FlightHistoryHtml,
+  findFr24RowForDay,
+  parseFr24FlightHistoryFlexible,
+} from "@/lib/fr24FlightHistory";
 import type { PlannedRow } from "@/lib/plannedCsv";
 import { fr24EquipmentSummary, matchPlannedVsFr24Equipment } from "@/lib/equipmentCompare";
 import { departureDateKey, pickPlannedForSegment, plannedEquipmentSummary } from "@/lib/plannedCsv";
@@ -37,8 +41,9 @@ export type MultiCompareJobResult = {
 /**
  * Load planned rows once, fetch live comparison HTML once per distinct flight.
  * Upserts DailyCompare only when Qsuite and equipment family compares are both decisive (Match/Mismatch each).
- * When either dimension is inconclusive, we **skip** the segment for this run and **leave existing DB rows
- * unchanged** (so a later export change or FR24 quirk does not erase prior successful snapshots).
+ * When either dimension is inconclusive, we **skip** upsert unless `planned` and `fr24Error` are set—then we
+ * persist schedule + error so `/compare` can show blocked/missing-source days. Otherwise existing DB rows stay
+ * unchanged (rolling export gaps do not erase prior snapshots).
  */
 export async function runCompareForDates(
   compareDateIsos: string[],
@@ -51,7 +56,7 @@ export async function runCompareForDates(
   }
   const errors: string[] = [];
 
-  const fr24Cache = new Map<string, ReturnType<typeof parseFr24FlightHistoryHtml>>();
+  const fr24Cache = new Map<string, ReturnType<typeof parseFr24FlightHistoryFlexible>>();
   const airfleetsCache = new Map<string, AirfleetsPayload>();
   const flightsNeeded = [...new Set(segments.map((s) => s.flight))];
   const amsTodayIso = amsterdamCalendarIso(0);
@@ -73,14 +78,34 @@ export async function runCompareForDates(
     return hit as unknown as Prisma.InputJsonValue;
   }
 
+  const fr24pw = await import("@/lib/fr24Playwright");
+
   for (const flight of flightsNeeded) {
     try {
       const html = await fetchFr24FlightHistoryHtml(flight);
-      fr24Cache.set(flight, parseFr24FlightHistoryHtml(html));
+      let rows = parseFr24FlightHistoryFlexible(html);
+      if (rows.length === 0 && fr24pw.fr24PlaywrightFallbackEnabled()) {
+        console.info(`[compare] FR24 parsed 0 rows for ${flight}, trying Playwright`);
+        const htmlPw = await fr24pw.fetchFr24HtmlViaPlaywright(flight);
+        rows = parseFr24FlightHistoryFlexible(htmlPw);
+      }
+      fr24Cache.set(flight, rows);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      errors.push(`${flight}: ${msg}`);
-      fr24Cache.set(flight, []);
+      if (fr24pw.fr24PlaywrightFallbackEnabled()) {
+        try {
+          console.info(`[compare] FR24 fetch failed for ${flight} (${msg}), trying Playwright`);
+          const htmlPw = await fr24pw.fetchFr24HtmlViaPlaywright(flight);
+          fr24Cache.set(flight, parseFr24FlightHistoryFlexible(htmlPw));
+        } catch (e2) {
+          const msg2 = e2 instanceof Error ? e2.message : String(e2);
+          errors.push(`${flight}: ${msg}; Playwright: ${msg2}`);
+          fr24Cache.set(flight, []);
+        }
+      } else {
+        errors.push(`${flight}: ${msg}`);
+        fr24Cache.set(flight, []);
+      }
     }
   }
 
@@ -127,6 +152,48 @@ export async function runCompareForDates(
       if (mq === null || eqMatch === null) {
         // Do not delete: inconclusive often means missing planned row for this day (rolling export) or
         // unrecognized FR24 text. Deleting here removed historical compare rows on the next cron run.
+        if (planned && fr24Error) {
+          await prisma.dailyCompare.upsert({
+            where: {
+              compareDate_flight_routeKey: {
+                compareDate,
+                flight: seg.flight,
+                routeKey: seg.routeKey,
+              },
+            },
+            create: {
+              compareDate,
+              flight: seg.flight,
+              routeKey: seg.routeKey,
+              plannedEquipment,
+              plannedQsuiteApi,
+              plannedQueryDate,
+              plannedDepartureLocal,
+              actualRegistration,
+              actualAircraftCell,
+              actualEquipment,
+              actualQsuiteFromTail,
+              matchQsuite: null,
+              matchEquipment: null,
+              fr24Error,
+              source: "fr24",
+            },
+            update: {
+              plannedEquipment,
+              plannedQsuiteApi,
+              plannedQueryDate,
+              plannedDepartureLocal,
+              actualRegistration,
+              actualAircraftCell,
+              actualEquipment,
+              actualQsuiteFromTail,
+              matchQsuite: null,
+              matchEquipment: null,
+              fr24Error,
+            },
+          });
+          segmentsProcessed += 1;
+        }
         continue;
       }
 
@@ -202,6 +269,12 @@ export async function runCompareForDates(
       await closeAirfleetsPlaywright();
     } catch {
       /* noop — Playwright optional / not loaded */
+    }
+    try {
+      const { closeFr24Playwright } = await import("@/lib/fr24Playwright");
+      await closeFr24Playwright();
+    } catch {
+      /* noop */
     }
   }
 }

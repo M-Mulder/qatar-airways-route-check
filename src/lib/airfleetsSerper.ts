@@ -1,57 +1,14 @@
 import type { AirfleetsPayload } from "@/lib/airfleets";
 import { formatAirfleetsErrorForStorage, parseSeatCounts } from "@/lib/airfleets";
+import { scrapeUrlViaSerper, serperConfigured } from "@/lib/serperScrape";
 
 const BASE = "https://www.airfleets.net";
-const SCRAPE_URL = "https://scrape.serper.dev";
 
 function norm(s: string): string {
   return s.replace(/\s+/g, " ").replace(/\u00a0/g, " ").trim();
 }
 
-export function serperConfigured(): boolean {
-  return !!process.env.SERPER_API_KEY?.trim();
-}
-
-type SerperScrapeJson = {
-  text?: string;
-  metadata?: { title?: string; description?: string };
-  credits?: number;
-  error?: string;
-};
-
-async function serperScrapePage(targetUrl: string): Promise<SerperScrapeJson> {
-  const key = process.env.SERPER_API_KEY!.trim();
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 45_000);
-  try {
-    const res = await fetch(SCRAPE_URL, {
-      method: "POST",
-      signal: ctrl.signal,
-      headers: {
-        "X-API-KEY": key,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ url: targetUrl }),
-      cache: "no-store",
-    });
-    const raw = await res.text();
-    let json: SerperScrapeJson;
-    try {
-      json = JSON.parse(raw) as SerperScrapeJson;
-    } catch {
-      throw new Error(`Scrape API returned non-JSON (HTTP ${res.status}).`);
-    }
-    if (!res.ok) {
-      throw new Error(
-        json.error || `Scrape API HTTP ${res.status}: ${norm(raw).slice(0, 200)}`,
-      );
-    }
-    if (json.error) throw new Error(`Scrape API: ${json.error}`);
-    return json;
-  } finally {
-    clearTimeout(t);
-  }
-}
+export { serperConfigured };
 
 /**
  * Airfleets `ficheapp` path segment after `plane-`, e.g. Airbus A350 + MSN 33 → `a350-33`.
@@ -171,7 +128,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
   const searchUrl = `${BASE}/recherche/?key=${encodeURIComponent(reg)}`;
 
   try {
-    const searchJson = await serperScrapePage(searchUrl);
+    const searchJson = await scrapeUrlViaSerper(searchUrl);
     const searchText = searchJson.text ?? "";
     const row = parseAirfleetsSearchSerperText(searchText, reg);
     if (!row) {
@@ -192,7 +149,7 @@ export async function fetchAirfleetsWithSerper(registration: string): Promise<Ai
     }
 
     const detailUrl = `${BASE}/ficheapp/plane-${slug}-${row.msn}.htm`;
-    const planeJson = await serperScrapePage(detailUrl);
+    const planeJson = await scrapeUrlViaSerper(detailUrl);
     const planeText = planeJson.text ?? "";
     if (!planeTextLooksLikeRegistration(planeText, reg)) {
       return {

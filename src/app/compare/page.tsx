@@ -92,7 +92,6 @@ export default async function ComparePage() {
 
     try {
       rows = await prisma.dailyCompare.findMany({
-        where: { OR: [{ matchQsuite: true }, { matchQsuite: false }] },
         orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
         take: 5000,
       });
@@ -137,8 +136,9 @@ export default async function ComparePage() {
                 <span className="text-[var(--ops-muted)]">Qsuite</span> (airline data vs the aircraft registration)
                 and{" "}
                 <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs what operated).
-                If comparison data is missing, blocked, or the aircraft line does not match your schedule, nothing
-                is saved here—the upcoming flights table below still reflects your saved schedule.
+                When the Flightradar24 request is blocked (for example HTTP 403 on your network), matching rows
+                are still saved with <span className="text-[var(--ops-muted)]">Unclear</span> status—see the Details
+                column for the reason. Rows with decisive Qsuite and aircraft matches appear as before.
               </p>
             ) : null}
           </div>
