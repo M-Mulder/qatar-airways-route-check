@@ -17,6 +17,19 @@ function compareDateToPrisma(compareDateIso: string): Date {
   return new Date(`${compareDateIso}T12:00:00.000Z`);
 }
 
+/** UI `parsePayload` requires `fetchedAt`; Postgres may hold `{}` which must be refetched, not reused. */
+function isCompleteAirfleetsPayload(p: Prisma.JsonValue | null | undefined): boolean {
+  if (p == null || typeof p !== "object" || Array.isArray(p)) return false;
+  return typeof (p as Record<string, unknown>).fetchedAt === "string";
+}
+
+function normalizeAirfleetsForDb(p: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  if (p != null && typeof p === "object" && !Array.isArray(p) && typeof (p as Record<string, unknown>).fetchedAt === "string") {
+    return p as Prisma.InputJsonValue;
+  }
+  return Prisma.DbNull;
+}
+
 function matchQsuite(
   planned: boolean | null | undefined,
   actual: boolean | null | undefined,
@@ -197,10 +210,9 @@ export async function runCompareForDates(
         continue;
       }
 
-      // For past dates, reuse a stored Airfleets JSON blob only when it exists (non-null). If the column is null,
-      // we never fetched aircraft details for this row — must call Airfleets or the UI shows tail text without a
-      // popover. (Using `!== undefined` was wrong: DB null is not undefined, so we skipped fetch forever.)
-      let existingAirfleetsPayload: Prisma.JsonValue | null | undefined;
+      // For past dates, reuse only a **complete** snapshot (`fetchedAt` present). Skip `{}` / null — otherwise we
+      // never refetch and the registration hover stays plain text forever.
+      let completeReuse: Prisma.JsonValue | undefined;
       if (compareDateIso < amsTodayIso) {
         const existing = await prisma.dailyCompare.findUnique({
           where: {
@@ -212,13 +224,13 @@ export async function runCompareForDates(
           },
           select: { airfleetsPayload: true },
         });
-        existingAirfleetsPayload = existing?.airfleetsPayload;
+        const p = existing?.airfleetsPayload;
+        if (isCompleteAirfleetsPayload(p)) completeReuse = p!;
       }
 
-      const airfleetsPayload =
-        existingAirfleetsPayload != null
-          ? existingAirfleetsPayload
-          : await airfleetsForRegistration(actualRegistration);
+      const rawAirfleets =
+        completeReuse ?? (await airfleetsForRegistration(actualRegistration));
+      const airfleetsForDb = normalizeAirfleetsForDb(rawAirfleets);
 
       await prisma.dailyCompare.upsert({
         where: {
@@ -243,7 +255,7 @@ export async function runCompareForDates(
           matchQsuite: mq,
           matchEquipment: eqMatch,
           fr24Error,
-          ...(airfleetsPayload != null ? { airfleetsPayload } : {}),
+          ...(airfleetsForDb !== Prisma.DbNull ? { airfleetsPayload: airfleetsForDb } : {}),
           source: "fr24",
         },
         update: {
@@ -258,7 +270,7 @@ export async function runCompareForDates(
           matchQsuite: mq,
           matchEquipment: eqMatch,
           fr24Error,
-          airfleetsPayload: airfleetsPayload ?? Prisma.DbNull,
+          airfleetsPayload: airfleetsForDb,
         },
       });
       segmentsProcessed += 1;

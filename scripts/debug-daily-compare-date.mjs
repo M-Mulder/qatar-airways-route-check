@@ -32,21 +32,29 @@ try {
       compareDate: true,
       flight: true,
       routeKey: true,
+      actualRegistration: true,
       matchQsuite: true,
       matchEquipment: true,
       fr24Error: true,
+      airfleetsPayload: true,
     },
   });
 
-  const visible = await prisma.dailyCompare.findMany({
-    where: {
-      compareDate: d,
-      OR: [{ matchQsuite: true }, { matchQsuite: false }, { fr24Error: { not: null } }],
-    },
-    select: { flight: true, routeKey: true, matchQsuite: true, fr24Error: true },
+  const payloadSummary = dayRows.map((r) => {
+    const p = r.airfleetsPayload;
+    const keys =
+      p && typeof p === "object" && !Array.isArray(p) ? Object.keys(p).sort() : [];
+    return {
+      flight: r.flight,
+      routeKey: r.routeKey,
+      actualRegistration: r.actualRegistration,
+      airfleetsPayloadNull: p == null,
+      airfleetsKeys: keys,
+      fetchedAt: p && typeof p === "object" ? p.fetchedAt ?? "(missing)" : null,
+    };
   });
 
-  console.log(JSON.stringify({ iso, dayRowsCount: dayRows.length, dayRows, visibleCount: visible.length, visible }, null, 2));
+  console.log(JSON.stringify({ iso, dayRowsCount: dayRows.length, payloadSummary, dayRows }, null, 2));
 } finally {
   await prisma.$disconnect();
 }
