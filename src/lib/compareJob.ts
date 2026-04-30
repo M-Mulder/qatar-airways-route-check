@@ -91,6 +91,10 @@ export async function runCompareForDates(
   }
 
   const fr24pw = await import("@/lib/fr24Playwright");
+  const bustFr24Chromium = (): Promise<void> =>
+    fr24pw.closeFr24Playwright().catch(() => {});
+  const fr24VercelIsolation =
+    process.env.VERCEL === "1" || process.env.VERCEL === "true";
 
   for (const flight of flightsNeeded) {
     try {
@@ -118,15 +122,14 @@ export async function runCompareForDates(
         errors.push(`${flight}: ${msg}`);
         fr24Cache.set(flight, []);
       }
+    } finally {
+      if (fr24VercelIsolation) await bustFr24Chromium();
     }
   }
 
-  // Release FR24 Chromium before Airfleets opens its own browser (two concurrent Lambdas hit memory limits easily).
-  try {
-    await fr24pw.closeFr24Playwright();
-    console.info("[compare] FR24 Playwright closed before segment compares / Airfleets");
-  } catch {
-    /* noop */
+  await bustFr24Chromium();
+  if (fr24VercelIsolation) {
+    console.info("[compare] FR24 Playwright torn down between flights → before Airfleets");
   }
 
   const uniqueDates = [...new Set(compareDateIsos)].sort();
