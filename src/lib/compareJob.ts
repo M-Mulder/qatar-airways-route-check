@@ -53,10 +53,9 @@ export type MultiCompareJobResult = {
 
 /**
  * Load planned rows once, fetch live comparison HTML once per distinct flight.
- * Upserts DailyCompare only when Qsuite and equipment family compares are both decisive (Match/Mismatch each).
- * When either dimension is inconclusive, we **skip** upsert unless `planned` and `fr24Error` are set—then we
- * persist schedule + error so `/compare` can show blocked/missing-source days. Otherwise existing DB rows stay
- * unchanged (rolling export gaps do not erase prior snapshots).
+ * Upserts DailyCompare when Qsuite and equipment compares are both decisive (Match/Mismatch each).
+ * When inconclusive: persist schedule + error if `planned` + `fr24Error`; persist actuals + null matches if
+ * `planned` + FR24 row (`fr`) so stale errors clear. Otherwise skip upsert (rolling export gaps do not erase rows).
  */
 export async function runCompareForDates(
   compareDateIsos: string[],
@@ -203,6 +202,69 @@ export async function runCompareForDates(
               matchQsuite: null,
               matchEquipment: null,
               fr24Error,
+            },
+          });
+          segmentsProcessed += 1;
+        } else if (planned && fr) {
+          // FR24 matched this leg but Qsuite and/or equipment matching is inconclusive — still persist operated
+          // aircraft and clear stale fr24Error (e.g. old Playwright failures after Serper succeeds).
+          let completeReuseInconclusive: Prisma.JsonValue | undefined;
+          if (compareDateIso < amsTodayIso) {
+            const existingInc = await prisma.dailyCompare.findUnique({
+              where: {
+                compareDate_flight_routeKey: {
+                  compareDate,
+                  flight: seg.flight,
+                  routeKey: seg.routeKey,
+                },
+              },
+              select: { airfleetsPayload: true },
+            });
+            const pInc = existingInc?.airfleetsPayload;
+            if (isCompleteAirfleetsPayload(pInc)) completeReuseInconclusive = pInc!;
+          }
+          const rawAfInc =
+            completeReuseInconclusive ?? (await airfleetsForRegistration(actualRegistration));
+          const airfleetsForDbInc = normalizeAirfleetsForDb(rawAfInc);
+          await prisma.dailyCompare.upsert({
+            where: {
+              compareDate_flight_routeKey: {
+                compareDate,
+                flight: seg.flight,
+                routeKey: seg.routeKey,
+              },
+            },
+            create: {
+              compareDate,
+              flight: seg.flight,
+              routeKey: seg.routeKey,
+              plannedEquipment,
+              plannedQsuiteApi,
+              plannedQueryDate,
+              plannedDepartureLocal,
+              actualRegistration,
+              actualAircraftCell,
+              actualEquipment,
+              actualQsuiteFromTail,
+              matchQsuite: null,
+              matchEquipment: null,
+              fr24Error: null,
+              ...(airfleetsForDbInc !== Prisma.DbNull ? { airfleetsPayload: airfleetsForDbInc } : {}),
+              source: "fr24",
+            },
+            update: {
+              plannedEquipment,
+              plannedQsuiteApi,
+              plannedQueryDate,
+              plannedDepartureLocal,
+              actualRegistration,
+              actualAircraftCell,
+              actualEquipment,
+              actualQsuiteFromTail,
+              matchQsuite: null,
+              matchEquipment: null,
+              fr24Error: null,
+              airfleetsPayload: airfleetsForDbInc,
             },
           });
           segmentsProcessed += 1;
