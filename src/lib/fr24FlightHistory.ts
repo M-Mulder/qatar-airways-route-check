@@ -319,7 +319,9 @@ export async function fetchFr24FlightHistoryHtml(flight: string): Promise<string
       if (hasFr24HistoryTable(raw) || parseFr24FlightHistoryFlexible(raw).length > 0) {
         return raw;
       }
-      throw new Error("Serper returned text without a flight history table.");
+      // Serper often returns a short marketing excerpt with no `#tbl-datatable`. Return it anyway so
+      // `compareJob` can run the Playwright path when enabled (`FR24_PLAYWRIGHT` on Vercel).
+      return raw;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (direct) return direct;

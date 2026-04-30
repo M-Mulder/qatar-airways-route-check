@@ -121,6 +121,14 @@ export async function runCompareForDates(
     }
   }
 
+  // Release FR24 Chromium before Airfleets opens its own browser (two concurrent Lambdas hit memory limits easily).
+  try {
+    await fr24pw.closeFr24Playwright();
+    console.info("[compare] FR24 Playwright closed before segment compares / Airfleets");
+  } catch {
+    /* noop */
+  }
+
   const uniqueDates = [...new Set(compareDateIsos)].sort();
   let segmentsProcessed = 0;
 

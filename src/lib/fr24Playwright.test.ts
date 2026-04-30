@@ -11,18 +11,18 @@ describe("fr24PlaywrightFallbackEnabled", () => {
     vi.unstubAllEnvs();
   });
 
-  it("defaults to false when VERCEL=1 so production cron skips fragile headless Chromium for FR24", () => {
+  it("defaults to true when VERCEL=1 (Airfleets runs after FR24 browser is torn down)", () => {
     vi.stubEnv("VERCEL", "1");
-    expect(fr24PlaywrightFallbackEnabled()).toBe(false);
-  });
-
-  it("defaults to true locally (no VERCEL) so laptops can tolerate FR24 403 without Serper", () => {
     expect(fr24PlaywrightFallbackEnabled()).toBe(true);
   });
 
-  it("forces true on Vercel when FR24_PLAYWRIGHT=1", () => {
+  it("defaults to true locally (no VERCEL) so laptops tolerate FR24 403 without Serper", () => {
+    expect(fr24PlaywrightFallbackEnabled()).toBe(true);
+  });
+
+  it("still true on Vercel when FR24_PLAYWRIGHT is unset", () => {
     vi.stubEnv("VERCEL", "1");
-    vi.stubEnv("FR24_PLAYWRIGHT", "1");
+    vi.stubEnv("FR24_PLAYWRIGHT", "");
     expect(fr24PlaywrightFallbackEnabled()).toBe(true);
   });
 
