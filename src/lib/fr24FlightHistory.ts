@@ -261,45 +261,72 @@ export function parseFr24FlightHistoryFlexible(raw: string): Fr24ParsedRow[] {
   return parseFr24FlightHistoryPlainText(raw);
 }
 
+function hasFr24HistoryTable(html: string): boolean {
+  return /\bid=["']tbl-datatable["']/i.test(html);
+}
+
+const FR24_FETCH_HEADERS: Record<string, string> = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  accept: "text/html,application/xhtml+xml",
+  "accept-language": "en-US,en;q=0.9",
+  referer: "https://www.flightradar24.com/",
+  "sec-fetch-dest": "document",
+  "sec-fetch-mode": "navigate",
+};
+
 /**
- * Flight history document for `flight` (e.g. `qr274`). When **`SERPER_API_KEY`** is set, uses
- * [Serper scrape](https://serper.dev) like Airfleets (avoids FR24 direct 403 from many networks).
- * Otherwise uses a direct HTTP GET (may fail with HTTP 403).
+ * Best-effort GET of the flight history page. Returns `null` on network / non-OK responses.
+ */
+async function fetchFr24DirectDocument(flight: string): Promise<string | null> {
+  const url = `https://www.flightradar24.com/data/flights/${flight.toLowerCase()}`;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 25_000);
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: FR24_FETCH_HEADERS,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Flight history HTML for `flight` (e.g. `qr274`).
+ * **Order:** try **direct** GET first — FR24 often SSR-includes `#tbl-datatable` in the HTML (works from many
+ * serverless IPs). Serper scrape frequently returns a short text stub with **no** history table. When direct has no
+ * table (e.g. HTTP 403 / challenge), fall back to **`SERPER_API_KEY`** scrape.
  */
 export async function fetchFr24FlightHistoryHtml(flight: string): Promise<string> {
   const url = `https://www.flightradar24.com/data/flights/${flight.toLowerCase()}`;
+  const direct = await fetchFr24DirectDocument(flight);
+  if (direct && hasFr24HistoryTable(direct)) {
+    return direct;
+  }
+
   const { serperConfigured, scrapeUrlViaSerper } = await import("@/lib/serperScrape");
   if (serperConfigured()) {
     try {
       const json = await scrapeUrlViaSerper(url);
       const raw = json.text ?? "";
       if (!raw.trim()) throw new Error("Serper scrape returned empty text");
-      return raw;
+      if (hasFr24HistoryTable(raw) || parseFr24FlightHistoryFlexible(raw).length > 0) {
+        return raw;
+      }
+      throw new Error("Serper returned text without a flight history table.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      if (direct) return direct;
       throw new Error(`FR24 Serper: ${msg}`);
     }
   }
 
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 25_000);
-  try {
-    const res = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        accept: "text/html,application/xhtml+xml",
-        "accept-language": "en-US,en;q=0.9",
-        referer: "https://www.flightradar24.com/",
-        "sec-fetch-dest": "document",
-        "sec-fetch-mode": "navigate",
-      },
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`FR24 HTTP ${res.status}`);
-    return res.text();
-  } finally {
-    clearTimeout(t);
-  }
+  if (!direct) throw new Error("FR24 direct fetch failed (HTTP or network).");
+  return direct;
 }

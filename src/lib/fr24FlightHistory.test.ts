@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   findFr24RowForDay,
   parseFr24FlightHistoryHtml,
@@ -61,3 +61,27 @@ describe("parseFr24FlightHistoryPlainText (Serper-style text)", () => {
     expect(row!.registration).toBe("A7-ALL");
   });
 });
+
+describe("fetchFr24FlightHistoryHtml", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it("uses direct fetch when response includes tbl-datatable (no Serper)", async () => {
+    const html = readFileSync(fixturePath, "utf8");
+    const fetchMock = vi.fn().mockResolvedValue(new Response(html, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("SERPER_API_KEY", "");
+    const { fetchFr24FlightHistoryHtml } = await import("./fr24FlightHistory");
+    const out = await fetchFr24FlightHistoryHtml("QR274");
+    expect(hasFr24HistoryTable(out)).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+/** Mirror of private helper for the fetch test only. */
+function hasFr24HistoryTable(html: string): boolean {
+  return /\bid=["']tbl-datatable["']/i.test(html);
+}
