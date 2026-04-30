@@ -54,8 +54,8 @@ export type MultiCompareJobResult = {
 /**
  * Load planned rows once, fetch live comparison HTML once per distinct flight.
  * Upserts DailyCompare when Qsuite and equipment compares are both decisive (Match/Mismatch each).
- * When inconclusive: persist schedule + error if `planned` + `fr24Error`; persist actuals + null matches if FR24
- * row (`fr`) exists (with or without planned export for that day) so stale errors clear. Otherwise skip upsert.
+ * When inconclusive: persist only if FR24 includes a **non-empty registration** (tail unknown → delete any stale row).
+ * Otherwise skip upsert. The `/compare` table is registration-first: no tail, no row.
  */
 export async function runCompareForDates(
   compareDateIsos: string[],
@@ -156,9 +156,16 @@ export async function runCompareForDates(
       const plannedQueryDate = planned?.query_date ?? null;
       const plannedDepartureLocal = planned?.departure_local ?? null;
 
-      const actualRegistration = fr?.registration ?? null;
+      const regTrim = (fr?.registration ?? "").trim();
+      if (!regTrim) {
+        await prisma.dailyCompare.deleteMany({
+          where: { compareDate, flight: seg.flight, routeKey: seg.routeKey },
+        });
+        continue;
+      }
+      const actualRegistration = regTrim;
       const actualAircraftCell = fr?.aircraftCellText ?? null;
-      const actualQsuiteFromTail = actualRegistration ? hasQsuiteTail(actualRegistration) : null;
+      const actualQsuiteFromTail = hasQsuiteTail(actualRegistration);
       const actualEquipment = fr24EquipmentSummary(actualAircraftCell);
       const eqMatch = matchPlannedVsFr24Equipment(plannedEquipment, actualAircraftCell);
 

@@ -91,10 +91,11 @@ export default async function ComparePage() {
     }
 
     try {
-      rows = await prisma.dailyCompare.findMany({
+      const raw = await prisma.dailyCompare.findMany({
         orderBy: [{ compareDate: "desc" }, { flight: "asc" }, { routeKey: "asc" }],
         take: 5000,
       });
+      rows = raw.filter((r) => (r.actualRegistration ?? "").trim().length > 0);
     } catch (e) {
       dbError = e instanceof Error ? e.message : String(e);
     }
@@ -118,9 +119,9 @@ export default async function ComparePage() {
       <section className="ops-reveal ops-reveal-d1 space-y-4">
         <h2 className="ops-display text-xl text-[var(--ops-fg)]">Route check results</h2>
         <p className="text-sm text-[var(--ops-subtle)]">
-          Where your published schedule lines up with what actually operated. Hover a{" "}
-          <span className="text-[var(--ops-muted)]">registration</span> for stored aircraft details when the daily
-          job has saved them.
+          Where your published schedule lines up with what actually operated. A leg appears here only when the job has
+          a known <span className="text-[var(--ops-muted)]">registration</span> from Flightradar24; hover it for
+          Airfleets details when saved.
         </p>
         {dbError ? (
           <div className="ops-alert ops-alert-warn">
@@ -131,14 +132,11 @@ export default async function ComparePage() {
             <p className="text-sm text-[var(--ops-muted)]">No route check results yet.</p>
             {!plannedError && plannedRows.length > 0 ? (
               <p className="text-xs leading-relaxed text-[var(--ops-subtle)]">
-                A row appears here only when the daily job can match that flight for the date and route{" "}
-                <em>and</em> confirm both{" "}
-                <span className="text-[var(--ops-muted)]">Qsuite</span> (airline data vs the aircraft registration)
-                and{" "}
-                <span className="text-[var(--ops-muted)]">aircraft type</span> (your schedule vs what operated).
-                When the Flightradar24 request is blocked (for example HTTP 403 on your network), matching rows
-                are still saved with <span className="text-[var(--ops-muted)]">Unclear</span> status—see the Details
-                column for the reason. Rows with decisive Qsuite and aircraft matches appear as before.
+                The daily job saves a row only when it can resolve a <span className="text-[var(--ops-muted)]">
+                  registration
+                </span>{" "}
+                for that leg and compare Qsuite plus aircraft type against your schedule. Future or partial FR24 rows
+                without a tail stay off this table until the source lists one.
               </p>
             ) : null}
           </div>
