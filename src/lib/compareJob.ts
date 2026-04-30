@@ -197,8 +197,9 @@ export async function runCompareForDates(
         continue;
       }
 
-      // For past dates, avoid re-scraping aircraft payload when we already have a stored result row.
-      // This reduces credit usage while still allowing the FR24 compare to be refreshed.
+      // For past dates, reuse a stored Airfleets JSON blob only when it exists (non-null). If the column is null,
+      // we never fetched aircraft details for this row — must call Airfleets or the UI shows tail text without a
+      // popover. (Using `!== undefined` was wrong: DB null is not undefined, so we skipped fetch forever.)
       let existingAirfleetsPayload: Prisma.JsonValue | null | undefined;
       if (compareDateIso < amsTodayIso) {
         const existing = await prisma.dailyCompare.findUnique({
@@ -215,7 +216,9 @@ export async function runCompareForDates(
       }
 
       const airfleetsPayload =
-        existingAirfleetsPayload !== undefined ? existingAirfleetsPayload : await airfleetsForRegistration(actualRegistration);
+        existingAirfleetsPayload != null
+          ? existingAirfleetsPayload
+          : await airfleetsForRegistration(actualRegistration);
 
       await prisma.dailyCompare.upsert({
         where: {
