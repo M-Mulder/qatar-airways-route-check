@@ -37,7 +37,8 @@ export type MultiCompareJobResult = {
 /**
  * Load planned rows once, fetch live comparison HTML once per distinct flight.
  * Upserts DailyCompare only when Qsuite and equipment family compares are both decisive (Match/Mismatch each).
- * Deletes any existing row when either dimension is inconclusive (N/A).
+ * When either dimension is inconclusive, we **skip** the segment for this run and **leave existing DB rows
+ * unchanged** (so a later export change or FR24 quirk does not erase prior successful snapshots).
  */
 export async function runCompareForDates(
   compareDateIsos: string[],
@@ -124,13 +125,8 @@ export async function runCompareForDates(
       const mq = matchQsuite(plannedQsuiteApi, actualQsuiteFromTail);
 
       if (mq === null || eqMatch === null) {
-        await prisma.dailyCompare.deleteMany({
-          where: {
-            compareDate,
-            flight: seg.flight,
-            routeKey: seg.routeKey,
-          },
-        });
+        // Do not delete: inconclusive often means missing planned row for this day (rolling export) or
+        // unrecognized FR24 text. Deleting here removed historical compare rows on the next cron run.
         continue;
       }
 
