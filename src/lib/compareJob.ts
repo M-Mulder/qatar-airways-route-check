@@ -54,8 +54,8 @@ export type MultiCompareJobResult = {
 /**
  * Load planned rows once, fetch live comparison HTML once per distinct flight.
  * Upserts DailyCompare when Qsuite and equipment compares are both decisive (Match/Mismatch each).
- * When inconclusive: persist schedule + error if `planned` + `fr24Error`; persist actuals + null matches if
- * `planned` + FR24 row (`fr`) so stale errors clear. Otherwise skip upsert (rolling export gaps do not erase rows).
+ * When inconclusive: persist schedule + error if `planned` + `fr24Error`; persist actuals + null matches if FR24
+ * row (`fr`) exists (with or without planned export for that day) so stale errors clear. Otherwise skip upsert.
  */
 export async function runCompareForDates(
   compareDateIsos: string[],
@@ -205,9 +205,9 @@ export async function runCompareForDates(
             },
           });
           segmentsProcessed += 1;
-        } else if (planned && fr) {
-          // FR24 matched this leg but Qsuite and/or equipment matching is inconclusive — still persist operated
-          // aircraft and clear stale fr24Error (e.g. old Playwright failures after Serper succeeds).
+        } else if (fr) {
+          // FR24 matched this leg but matching is inconclusive, or the schedule export has no row for this day.
+          // Still persist operated aircraft and clear stale fr24Error (e.g. old Playwright failures).
           let completeReuseInconclusive: Prisma.JsonValue | undefined;
           if (compareDateIso < amsTodayIso) {
             const existingInc = await prisma.dailyCompare.findUnique({
