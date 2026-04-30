@@ -142,7 +142,8 @@ export function RegistrationAirfleetsPopover({ registration, payload }: Props) {
     return <span className="text-[var(--ops-subtle)]">—</span>;
   }
 
-  const hasPanel = Boolean(data && (data.error || data.type || data.msn || data.detailUrl));
+  /** Any snapshot from `parsePayload` (has `fetchedAt`) is worth the interactive control — not only error/type/msn/detailUrl. Serper often fills aircraftFamily / seats / hex without `detailUrl`. */
+  const hasPanel = Boolean(data);
 
   if (!hasPanel) {
     return (
